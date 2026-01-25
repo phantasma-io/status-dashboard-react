@@ -1,0 +1,16 @@
+services:
+  web:
+    image: pha-dashboard:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      DASHBOARD_CONFIG_PATH: "/app/config/hosts.json"
+      DASHBOARD_TIMEOUT_MS: "8000"
+    volumes:
+      - ./config/hosts.json:/app/config/hosts.json:ro
+    restart: unless-stopped

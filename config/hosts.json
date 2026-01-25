@@ -1,0 +1,17 @@
+{
+  "defaultNetwork": "mainnet",
+  "networks": {
+    "mainnet": {
+      "hosts": {},
+      "rpcs": {}
+    },
+    "testnet": {
+      "hosts": {},
+      "rpcs": {}
+    },
+    "devnet": {
+      "hosts": {},
+      "rpcs": {}
+    }
+  }
+}
