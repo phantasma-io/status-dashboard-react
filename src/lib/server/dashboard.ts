@@ -1,12 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { NETWORKS, parseDashboardConfig, type NetworkKey } from "@/lib/config";
-
-export const explorerApiByNetwork: Record<NetworkKey, string> = {
-  mainnet: "https://api-explorer.phantasma.info/api/v1",
-  testnet: "https://api-testnet-explorer.phantasma.info/api/v1",
-  devnet: "https://api-devnet-explorer.phantasma.info/api/v1",
-};
+import { NETWORKS, parseDashboardConfig, type DashboardConfig, type NetworkKey } from "@/lib/config";
 
 export function normalizeNetwork(value: string | null, fallback: NetworkKey): NetworkKey {
   if (value && NETWORKS.includes(value as NetworkKey)) {
@@ -28,6 +22,15 @@ export async function loadDashboardConfig() {
     path.join(process.cwd(), "config", "hosts.json");
   const raw = await readFile(configPath, "utf-8");
   return parseDashboardConfig(JSON.parse(raw));
+}
+
+export function resolveExplorerApi(config: DashboardConfig, network: NetworkKey): string {
+  const explorerKey = config.networks[network].defaultExplorer;
+  const explorer = config.networks[network].explorers[explorerKey];
+  if (!explorer) {
+    throw new Error(`defaultExplorer "${explorerKey}" missing in explorers (${network})`);
+  }
+  return explorer.apiUrl;
 }
 
 export function sanitizeError(err: unknown): string {

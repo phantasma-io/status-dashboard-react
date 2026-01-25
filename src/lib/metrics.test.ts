@@ -21,8 +21,9 @@ describe("metrics", () => {
   });
 
   it("classifies delta tone based on thresholds", () => {
-    // Coloring rules: <=10 is warning, >10 is danger, null is neutral.
+    // Coloring rules: 0 is success, 1..10 warning, >10 danger, null neutral.
     expect(getDeltaTone(null)).toBe("neutral");
+    expect(getDeltaTone(0)).toBe("success");
     expect(getDeltaTone(10)).toBe("warning");
     expect(getDeltaTone(11)).toBe("danger");
   });

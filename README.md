@@ -19,6 +19,13 @@ The dashboard reads a server-side JSON file. The default Docker setup mounts it 
   "defaultNetwork": "mainnet",
   "networks": {
     "mainnet": {
+      "defaultExplorer": "phantasma",
+      "explorers": {
+        "phantasma": {
+          "url": "https://explorer.phantasma.info",
+          "apiUrl": "https://api-explorer.phantasma.info/api/v1"
+        }
+      },
       "hosts": {
         "main-a": {
           "title": "Mainnet BP A",
@@ -34,10 +41,24 @@ The dashboard reads a server-side JSON file. The default Docker setup mounts it 
       }
     },
     "testnet": {
+      "defaultExplorer": "phantasma",
+      "explorers": {
+        "phantasma": {
+          "url": "https://testnet-explorer.phantasma.info",
+          "apiUrl": "https://api-testnet-explorer.phantasma.info/api/v1"
+        }
+      },
       "hosts": {},
       "rpcs": {}
     },
     "devnet": {
+      "defaultExplorer": "phantasma",
+      "explorers": {
+        "phantasma": {
+          "url": "https://devnet-explorer.phantasma.info",
+          "apiUrl": "https://api-devnet-explorer.phantasma.info/api/v1"
+        }
+      },
       "hosts": {},
       "rpcs": {}
     }
@@ -48,6 +69,7 @@ The dashboard reads a server-side JSON file. The default Docker setup mounts it 
 Notes:
 - BP URLs must already include `/node/<name>/` and a trailing slash.
 - RPC URLs must point to the JSON-RPC endpoint (usually `/rpc`).
+- Each network must include `defaultExplorer` matching one of its explorer keys.
 - `role` is optional for hosts. If omitted, it defaults to `Watcher`.
 
 ## Docker (local)
@@ -60,7 +82,4 @@ The default compose exposes the dashboard on port `3003` and mounts `./config/ho
 
 ## Explorer supply sources
 
-The UI fetches SOUL/KCAL supply from explorer APIs:
-- mainnet: `https://api-explorer.phantasma.info/api/v1`
-- testnet: `https://api-testnet-explorer.phantasma.info/api/v1`
-- devnet: `https://api-devnet-explorer.phantasma.info/api/v1`
+SOUL/KCAL supply is fetched from the `apiUrl` of the per-network `defaultExplorer` entry.

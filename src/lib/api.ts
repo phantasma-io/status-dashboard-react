@@ -44,6 +44,13 @@ export type StatusSummary = {
   dataToken?: TokenInfo;
 };
 
+export type RpcBuildInfo = {
+  version: string | null;
+  commit: string | null;
+  buildTimeUtc: string | null;
+};
+
+
 const DEFAULT_TIMEOUT_MS = 15000;
 // Retry transient network failures to reduce flaky dashboard status updates.
 const DEFAULT_RETRY_OPTIONS = {
@@ -279,6 +286,56 @@ export async function fetchStatusSummary(
 ): Promise<StatusSummary> {
   const payload = await fetchJson(`${baseUrl}v1/status?format=json`, timeoutMs);
   return parseStatus(payload);
+}
+
+function parseRpcBuildInfo(payload: unknown): RpcBuildInfo {
+  if (!isRecord(payload)) {
+    throw new Error("RPC response must be an object");
+  }
+
+  if (payload.error) {
+    const errorText =
+      typeof payload.error === "string"
+        ? payload.error
+        : isRecord(payload.error) && typeof payload.error.message === "string"
+          ? payload.error.message
+          : "RPC returned error";
+    throw new Error(errorText);
+  }
+
+  const result = isRecord(payload.result) ? payload.result : null;
+  if (!result) {
+    throw new Error("RPC result missing build info");
+  }
+
+  return {
+    version: readString(result.version),
+    commit: readString(result.commit),
+    buildTimeUtc: readString(result.buildTimeUtc),
+  };
+}
+
+export async function fetchRpcVersion(
+  rpcUrl: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<RpcBuildInfo> {
+  const response = await fetchWithRetry(
+    rpcUrl,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "getVersion",
+        params: [],
+        id: 1,
+      }),
+    },
+    timeoutMs
+  );
+
+  const payload: unknown = await response.json();
+  return parseRpcBuildInfo(payload);
 }
 
 export async function fetchRpcHeight(

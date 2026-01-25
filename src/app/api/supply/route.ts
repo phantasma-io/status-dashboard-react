@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { fetchTokenSupply } from "@/lib/api";
 import type { NetworkKey } from "@/lib/config";
 import {
-  explorerApiByNetwork,
   loadDashboardConfig,
   normalizeNetwork,
   readTimeoutMs,
+  resolveExplorerApi,
   sanitizeError,
 } from "@/lib/server/dashboard";
 
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     const config = await loadDashboardConfig();
     const fallback = config.defaultNetwork ?? "mainnet";
     const network = normalizeNetwork(url.searchParams.get("network"), fallback);
-    const apiBase = explorerApiByNetwork[network];
+    const apiBase = resolveExplorerApi(config, network);
 
     let supply: SupplyResponse["supply"] = { soul: null, kcal: null };
     try {

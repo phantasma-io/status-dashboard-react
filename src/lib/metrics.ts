@@ -1,4 +1,4 @@
-export type DeltaTone = "neutral" | "warning" | "danger";
+export type DeltaTone = "neutral" | "success" | "warning" | "danger";
 export type DelayTone = "neutral" | "warning" | "danger";
 
 const heightFormatter = new Intl.NumberFormat("en-US", {
@@ -49,6 +49,9 @@ export function computeDelta(height: number | null, maxHeight: number | null): n
 export function getDeltaTone(delta: number | null): DeltaTone {
   if (delta === null) {
     return "neutral";
+  }
+  if (delta === 0) {
+    return "success";
   }
   if (delta <= 10) {
     return "warning";

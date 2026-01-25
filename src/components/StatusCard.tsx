@@ -14,6 +14,7 @@ import { ClipboardCopy, RotateCw } from "lucide-react";
 
 const toneStyles: Record<ReturnType<typeof getDeltaTone>, string> = {
   neutral: "text-foreground",
+  success: "text-emerald-600 dark:text-emerald-400",
   warning: "text-yellow-600 dark:text-yellow-400",
   danger: "text-red-600 dark:text-red-400",
 };
@@ -36,6 +37,20 @@ function truncateMiddle(value: string, head = 8, tail = 8): string {
   }
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
+// Render build timestamps in compact UTC to match server-provided timezone.
+function formatBuildTime(value: string | null | undefined): string {
+  if (!value) {
+    return "—";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  const pad = (input: number) => input.toString().padStart(2, "0");
+  return `${parsed.getUTCFullYear()}-${pad(parsed.getUTCMonth() + 1)}-${pad(parsed.getUTCDate())} ${pad(parsed.getUTCHours())}:${pad(parsed.getUTCMinutes())} UTC`;
+}
+
+
 
 function resolveRoleTone(value: string | null | undefined) {
   const normalized = value?.toLowerCase() ?? "watcher";
@@ -73,6 +88,16 @@ export function StatusCard({
     card.avgVerificationDelayMs === null || card.avgVerificationDelayMs === undefined
       ? null
       : card.avgVerificationDelayMs / 1000
+  );
+  const rpcFirstTone = getDelayToneSeconds(
+    card.rpcFirstResponseMs === null || card.rpcFirstResponseMs === undefined
+      ? null
+      : card.rpcFirstResponseMs / 1000
+  );
+  const rpcAverageTone = getDelayToneSeconds(
+    card.rpcAverageResponseMs === null || card.rpcAverageResponseMs === undefined
+      ? null
+      : card.rpcAverageResponseMs / 1000
   );
 
   return (
@@ -223,7 +248,36 @@ export function StatusCard({
             </span>
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+          <span>
+            Version:{" "}
+            <span className="text-foreground/80">{card.rpcVersion ?? "—"}</span>
+          </span>
+          <span title={card.rpcBuildTimeUtc ?? undefined}>
+            Build:{" "}
+            <span className="text-foreground/80">{formatBuildTime(card.rpcBuildTimeUtc)}</span>
+          </span>
+          <span className="col-span-2" title={card.rpcCommit ?? undefined}>
+            Commit:{" "}
+            <span className="font-mono text-foreground/80">
+              {card.rpcCommit ? truncateMiddle(card.rpcCommit) : "—"}
+            </span>
+          </span>
+          <span title="Response time for the first RPC call">
+            Resp 1st:{" "}
+            <span className={delayToneStyles[rpcFirstTone]}>
+              {formatMilliseconds(card.rpcFirstResponseMs ?? null)}
+            </span>
+          </span>
+          <span title="Average response time across up to 5 successful calls">
+            Resp avg(5):{" "}
+            <span className={delayToneStyles[rpcAverageTone]}>
+              {formatMilliseconds(card.rpcAverageResponseMs ?? null)}
+            </span>
+          </span>
+        </div>
+      )}
     </div>
   );
 }

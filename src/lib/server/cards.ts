@@ -1,5 +1,5 @@
-import type { BlockHeights, StatusSummary } from "@/lib/api";
-import { fetchBlockHeights, fetchRpcHeight, fetchStatusSummary } from "@/lib/api";
+import type { BlockHeights, RpcBuildInfo, StatusSummary } from "@/lib/api";
+import { fetchBlockHeights, fetchRpcHeight, fetchRpcVersion, fetchStatusSummary } from "@/lib/api";
 import type { HostEntry, RpcEntry } from "@/lib/config";
 import type { CardData } from "@/lib/types";
 import { sanitizeError } from "@/lib/server/dashboard";
@@ -50,6 +50,26 @@ type RpcCardOptions = {
   entry: RpcEntry;
   timeoutMs: number;
 };
+
+type RpcVersionSample = {
+  durationMs: number;
+  info: RpcBuildInfo | null;
+  error: unknown | null;
+};
+
+// Use GetVersion for latency sampling to avoid extra chain-state work on RPC nodes.
+async function sampleRpcVersion(
+  rpcUrl: string,
+  timeoutMs: number
+): Promise<RpcVersionSample> {
+  const start = Date.now();
+  try {
+    const info = await fetchRpcVersion(rpcUrl, timeoutMs);
+    return { durationMs: Date.now() - start, info, error: null };
+  } catch (error) {
+    return { durationMs: Date.now() - start, info: null, error };
+  }
+}
 
 export async function buildBpCard({
   id,
@@ -104,21 +124,41 @@ export async function buildRpcCard({
   entry,
   timeoutMs,
 }: RpcCardOptions): Promise<CardData> {
-  let height: number | null = null;
-  let error: string | null = null;
+  const heightPromise = fetchRpcHeight(entry.url, timeoutMs)
+    .then((height) => ({ height, error: null as unknown | null }))
+    .catch((error) => ({ height: null, error }));
 
-  try {
-    height = await fetchRpcHeight(entry.url, timeoutMs);
-  } catch (err) {
-    error = sanitizeError(err);
-  }
+  const firstSample = await sampleRpcVersion(entry.url, timeoutMs);
+  const extraSamples = await Promise.all(
+    Array.from({ length: 4 }, () => sampleRpcVersion(entry.url, timeoutMs))
+  );
+  const heightResult = await heightPromise;
+
+  const samples = [firstSample, ...extraSamples];
+  const successful = samples.filter((sample) => sample.info !== null);
+  const durations = successful.map((sample) => sample.durationMs);
+  const avgResponseMs =
+    durations.length > 0
+      ? durations.reduce((sum, value) => sum + value, 0) / durations.length
+      : null;
+  const versionInfo = successful[0]?.info ?? null;
+  const versionError =
+    successful.length > 0
+      ? null
+      : sanitizeError(firstSample.error ?? extraSamples.find((sample) => sample.error)?.error);
+  const heightError = heightResult.error ? sanitizeError(heightResult.error) : null;
 
   return {
     id,
     nodeKey,
     kind: "rpc",
     title: entry.title,
-    height,
-    error,
+    height: heightResult.height,
+    rpcFirstResponseMs: firstSample.durationMs,
+    rpcAverageResponseMs: avgResponseMs,
+    rpcVersion: versionInfo?.version ?? null,
+    rpcCommit: versionInfo?.commit ?? null,
+    rpcBuildTimeUtc: versionInfo?.buildTimeUtc ?? null,
+    error: heightError ?? versionError,
   };
 }

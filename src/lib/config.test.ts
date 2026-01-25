@@ -5,6 +5,14 @@ const baseConfig = {
   defaultNetwork: "mainnet",
   networks: {
     mainnet: {
+      defaultExplorer: "phantasma",
+      explorers: {
+        phantasma: {
+          title: "Phantasma Explorer",
+          url: "https://explorer.example.org",
+          apiUrl: "https://api.example.org/api/v1",
+        },
+      },
       hosts: {
         "main-a": {
           title: "Mainnet A",
@@ -17,15 +25,25 @@ const baseConfig = {
       },
     },
     testnet: {
-      defaultHost: "",
+      defaultExplorer: "phantasma",
+      explorers: {
+        phantasma: {
+          url: "https://testnet-explorer.example.org",
+          apiUrl: "https://api-testnet.example.org/api/v1",
+        },
+      },
       hosts: {},
-      defaultRpc: "",
       rpcs: {},
     },
     devnet: {
-      defaultHost: "",
+      defaultExplorer: "phantasma",
+      explorers: {
+        phantasma: {
+          url: "https://devnet-explorer.example.org",
+          apiUrl: "https://api-devnet.example.org/api/v1",
+        },
+      },
       hosts: {},
-      defaultRpc: "",
       rpcs: {},
     },
   },
@@ -47,13 +65,36 @@ describe("parseDashboardConfig", () => {
       defaultNetwork: "mainnet",
       networks: {
         mainnet: {
+          defaultExplorer: "phantasma",
+          explorers: {
+            phantasma: {
+              url: "https://explorer.example.org",
+              apiUrl: "https://api.example.org/api/v1",
+            },
+          },
           hosts: {
             "main-b": { title: "Mainnet B", url: "https://example.com/node/b/" },
           },
           rpcs: {},
         },
-        testnet: {},
-        devnet: {},
+        testnet: {
+          defaultExplorer: "phantasma",
+          explorers: {
+            phantasma: {
+              url: "https://testnet-explorer.example.org",
+              apiUrl: "https://api-testnet.example.org/api/v1",
+            },
+          },
+        },
+        devnet: {
+          defaultExplorer: "phantasma",
+          explorers: {
+            phantasma: {
+              url: "https://devnet-explorer.example.org",
+              apiUrl: "https://api-devnet.example.org/api/v1",
+            },
+          },
+        },
       },
     });
     expect(config.networks.mainnet.hosts["main-b"].role).toBe("Watcher");
@@ -75,14 +116,118 @@ describe("parseDashboardConfig", () => {
         defaultNetwork: "mainnet",
         networks: {
           mainnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://explorer.example.org",
+                apiUrl: "https://api.example.org/api/v1",
+              },
+            },
             hosts: {
               bad: { title: "Missing url" },
             },
           },
-          testnet: {},
-          devnet: {},
+          testnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://testnet-explorer.example.org",
+                apiUrl: "https://api-testnet.example.org/api/v1",
+              },
+            },
+          },
+          devnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://devnet-explorer.example.org",
+                apiUrl: "https://api-devnet.example.org/api/v1",
+              },
+            },
+          },
         },
       })
     ).toThrowError(/hosts/);
   });
+
+  it("rejects malformed explorer entries", () => {
+    expect(() =>
+      parseDashboardConfig({
+        defaultNetwork: "mainnet",
+        networks: {
+          mainnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://explorer.example.org",
+              },
+            },
+            hosts: {},
+            rpcs: {},
+          },
+          testnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://testnet-explorer.example.org",
+                apiUrl: "https://api-testnet.example.org/api/v1",
+              },
+            },
+          },
+          devnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://devnet-explorer.example.org",
+                apiUrl: "https://api-devnet.example.org/api/v1",
+              },
+            },
+          },
+        },
+      })
+    ).toThrowError(/explorers/);
+  });
+  it("rejects missing defaultExplorer in a network", () => {
+    // Each network must declare which explorer supplies API data for that environment.
+    expect(() =>
+      parseDashboardConfig({
+        defaultNetwork: "mainnet",
+        networks: {
+          mainnet: {
+            explorers: {
+              phantasma: {
+                url: "https://explorer.example.org",
+                apiUrl: "https://api.example.org/api/v1",
+              },
+            },
+            hosts: {},
+            rpcs: {},
+          },
+          testnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://testnet-explorer.example.org",
+                apiUrl: "https://api-testnet.example.org/api/v1",
+              },
+            },
+            hosts: {},
+            rpcs: {},
+          },
+          devnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://devnet-explorer.example.org",
+                apiUrl: "https://api-devnet.example.org/api/v1",
+              },
+            },
+            hosts: {},
+            rpcs: {},
+          },
+        },
+      })
+    ).toThrowError(/defaultExplorer/);
+  });
+
 });

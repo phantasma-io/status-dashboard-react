@@ -13,9 +13,17 @@ export type RpcEntry = {
   url: string;
 };
 
+export type ExplorerEntry = {
+  title?: string;
+  url: string;
+  apiUrl: string;
+};
+
 export type NetworkConfig = {
+  defaultExplorer: string;
   hosts: Record<string, HostEntry>;
   rpcs: Record<string, RpcEntry>;
+  explorers: Record<string, ExplorerEntry>;
 };
 
 export type DashboardConfig = {
@@ -24,11 +32,6 @@ export type DashboardConfig = {
 };
 
 export const NETWORKS: NetworkKey[] = ["mainnet", "testnet", "devnet"];
-
-const emptyNetwork = (): NetworkConfig => ({
-  hosts: {},
-  rpcs: {},
-});
 
 function parseEntries(
   value: unknown,
@@ -60,9 +63,6 @@ function parseEntries(
 }
 
 function parseNetworkConfig(value: unknown, label: NetworkKey): NetworkConfig {
-  if (value === undefined || value === null) {
-    return emptyNetwork();
-  }
   if (!isRecord(value)) {
     throw new Error(`network "${label}" must be an object`);
   }
@@ -75,11 +75,49 @@ function parseNetworkConfig(value: unknown, label: NetworkKey): NetworkConfig {
     string,
     RpcEntry
   >;
+  const explorers = parseExplorerEntries(value.explorers, `explorers (${label})`);
+  // Each network declares its own default explorer to avoid cross-network API mixups.
+  const defaultExplorer = readString(value.defaultExplorer);
+  if (!defaultExplorer) {
+    throw new Error(`network "${label}" must include defaultExplorer`);
+  }
+  if (!explorers[defaultExplorer]) {
+    throw new Error(`defaultExplorer "${defaultExplorer}" missing in explorers (${label})`);
+  }
 
   return {
+    defaultExplorer,
     hosts,
     rpcs,
+    explorers,
   };
+}
+
+function parseExplorerEntries(
+  value: unknown,
+  label: string
+): Record<string, ExplorerEntry> {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+
+  const result: Record<string, ExplorerEntry> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!isRecord(entry)) {
+      throw new Error(`${label} entry "${key}" must be an object`);
+    }
+    const url = readString(entry.url);
+    const apiUrl = readString(entry.apiUrl);
+    if (!url || !apiUrl) {
+      throw new Error(`${label} entry "${key}" must include url and apiUrl`);
+    }
+    const title = readString(entry.title);
+    result[key] = title ? { title, url, apiUrl } : { url, apiUrl };
+  }
+  return result;
 }
 
 export function parseDashboardConfig(payload: unknown): DashboardConfig {
