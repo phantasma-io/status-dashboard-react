@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   computeDelta,
   formatMilliseconds,
+  formatNumberStringWhole,
   formatSeconds,
+  getDelayToneSeconds,
   getDeltaTone,
 } from "@/lib/metrics";
 
@@ -38,5 +40,17 @@ describe("metrics", () => {
     // Millisecond inputs should map to the same unit logic.
     expect(formatMilliseconds(1500)).toBe("1.5s");
     expect(formatMilliseconds(60000)).toBe("1.0m");
+  });
+
+  it("classifies delay tone by unit size", () => {
+    // Minutes should warn, hours+ should be danger, seconds stay neutral.
+    expect(getDelayToneSeconds(30)).toBe("neutral");
+    expect(getDelayToneSeconds(120)).toBe("warning");
+    expect(getDelayToneSeconds(7200)).toBe("danger");
+  });
+
+  it("formats whole-number supply strings without decimals", () => {
+    // Collapsed summary should remove fractional digits.
+    expect(formatNumberStringWhole("12345.678")).toBe("12,345");
   });
 });

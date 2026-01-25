@@ -1,4 +1,5 @@
 export type DeltaTone = "neutral" | "warning" | "danger";
+export type DelayTone = "neutral" | "warning" | "danger";
 
 const heightFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
@@ -30,6 +31,14 @@ export function formatNumberString(value: string | null): string {
   return `${sign}${grouped}${rawFrac ? `.${rawFrac}` : ""}`;
 }
 
+export function formatNumberStringWhole(value: string | null): string {
+  if (!value) {
+    return "—";
+  }
+  const [rawInt] = value.split(".");
+  return formatNumberString(rawInt);
+}
+
 export function computeDelta(height: number | null, maxHeight: number | null): number | null {
   if (height === null || maxHeight === null) {
     return null;
@@ -59,6 +68,19 @@ export function formatMilliseconds(value: number | null): string {
     return "—";
   }
   return formatDurationSeconds(value / 1000);
+}
+
+export function getDelayToneSeconds(value: number | null): DelayTone {
+  if (value === null) {
+    return "neutral";
+  }
+  if (value >= 3600) {
+    return "danger";
+  }
+  if (value >= 60) {
+    return "warning";
+  }
+  return "neutral";
 }
 
 function formatDurationSeconds(value: number): string {

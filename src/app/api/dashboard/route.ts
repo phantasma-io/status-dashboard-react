@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { fetchBlockHeights, fetchRpcHeight, fetchStatusSummary } from "@/lib/api";
 import type { NetworkKey } from "@/lib/config";
 import {
   loadDashboardConfig,
   normalizeNetwork,
   readTimeoutMs,
-  sanitizeError,
 } from "@/lib/server/dashboard";
+import { buildBpCard, buildRpcCard } from "@/lib/server/cards";
+import type { CardData } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,63 +15,10 @@ type DashboardResponse = {
   network: NetworkKey;
   defaultNetwork: NetworkKey;
   counts: { hosts: number; rpcs: number };
-  cards: Array<{
-    id: string;
-    kind: "bp" | "rpc";
-    title: string;
-    height: number | null;
-    heights?: {
-      applied: number;
-      proven: number;
-      committed: number;
-      appended: number;
-      known: number;
-    } | null;
-    leader?: string | null;
-    lastAppliedAgeSec?: number | null;
-    avgProductionDelayMs?: number | null;
-    avgVerificationDelayMs?: number | null;
-    avgTransactions?: number | null;
-    sparkline?: number[] | null;
-    role?: string | null;
-    error?: string | null;
-  }>;
+  cards: CardData[];
   maxHeight: number | null;
   supply: { soul: string | null; kcal: string | null; error?: string };
 };
-
-function summarizeBlocks(status: Awaited<ReturnType<typeof fetchStatusSummary>> | null) {
-  if (!status?.blocks || status.blocks.length === 0) {
-    return {
-      leader: null,
-      lastAppliedAgeSec: null,
-      avgProductionDelayMs: null,
-      avgVerificationDelayMs: null,
-      avgTransactions: null,
-      sparkline: null as number[] | null,
-    };
-  }
-
-  const blocks = status.blocks;
-  const last = blocks[blocks.length - 1];
-  const now = status.nowMs ?? Date.now();
-  const lastAppliedAgeSec = Math.max(0, (now - last.timeAppliedMs) / 1000);
-  const productionDelays = blocks.map((block) => block.productionDelayMs);
-  const verificationDelays = blocks.map((block) => block.verificationDelayMs);
-  const transactions = blocks.map((block) => block.transactions);
-
-  const avg = (values: number[]) =>
-    values.reduce((sum, value) => sum + value, 0) / values.length;
-
-  return {
-    leader: last.raftLeaderPha ?? last.raftLeader ?? null,
-    lastAppliedAgeSec,
-    avgProductionDelayMs: avg(productionDelays),
-    avgVerificationDelayMs: avg(verificationDelays),
-    avgTransactions: avg(transactions),
-    sparkline: productionDelays,
-  };
-}
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -89,17 +36,19 @@ export async function GET(request: Request) {
     const rpcEntries = rpcs.sort(([a], [b]) => a.localeCompare(b));
 
     const shellCards: DashboardResponse["cards"] = [
-      ...bpEntries.map((entry, index) => ({
+      ...bpEntries.map(([key, entry], index) => ({
         id: `bp-${index}`,
+        nodeKey: key,
         kind: "bp" as const,
-        title: entry[1].title,
+        title: entry.title,
         height: null,
-        role: entry[1].role ?? "Watcher",
+        role: entry.role ?? "Watcher",
       })),
-      ...rpcEntries.map((entry, index) => ({
+      ...rpcEntries.map(([key, entry], index) => ({
         id: `rpc-${index}`,
+        nodeKey: key,
         kind: "rpc" as const,
-        title: entry[1].title,
+        title: entry.title,
         height: null,
       })),
     ];
@@ -117,65 +66,25 @@ export async function GET(request: Request) {
     }
 
     const bpCards = await Promise.all(
-      bpEntries.map(async ([key, entry], index) => {
-        let heights = null;
-        let status = null;
-        let error: string | null = null;
-
-        const [heightsResult, statusResult] = await Promise.allSettled([
-          fetchBlockHeights(entry.url, timeoutMs),
-          fetchStatusSummary(entry.url, timeoutMs),
-        ]);
-
-        if (heightsResult.status === "fulfilled") {
-          heights = heightsResult.value;
-        } else {
-          error = sanitizeError(heightsResult.reason);
-        }
-
-        if (statusResult.status === "fulfilled") {
-          status = statusResult.value;
-        } else {
-          error = error ?? sanitizeError(statusResult.reason);
-        }
-
-        const summary = summarizeBlocks(status);
-
-        return {
+      bpEntries.map(([key, entry], index) =>
+        buildBpCard({
           id: `bp-${index}`,
-          kind: "bp" as const,
-          title: entry.title,
-          height: heights?.applied ?? null,
-          heights,
-          leader: summary.leader,
-          lastAppliedAgeSec: summary.lastAppliedAgeSec,
-          avgProductionDelayMs: summary.avgProductionDelayMs,
-          avgVerificationDelayMs: summary.avgVerificationDelayMs,
-          avgTransactions: summary.avgTransactions,
-          sparkline: summary.sparkline,
-          role: entry.role ?? "Watcher",
-          error,
-        };
-      })
+          nodeKey: key,
+          entry,
+          timeoutMs,
+        })
+      )
     );
 
     const rpcCards = await Promise.all(
-      rpcEntries.map(async ([key, entry], index) => {
-        let height: number | null = null;
-        let error: string | null = null;
-        try {
-          height = await fetchRpcHeight(entry.url, timeoutMs);
-        } catch (err) {
-          error = sanitizeError(err);
-        }
-        return {
+      rpcEntries.map(([key, entry], index) =>
+        buildRpcCard({
           id: `rpc-${index}`,
-          kind: "rpc" as const,
-          title: entry.title,
-          height,
-          error,
-        };
-      })
+          nodeKey: key,
+          entry,
+          timeoutMs,
+        })
+      )
     );
 
     const cards = [...bpCards, ...rpcCards];

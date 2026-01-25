@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { StatusCard, type CardData } from "@/components/StatusCard";
+import { StatusCard } from "@/components/StatusCard";
 import { NETWORKS, type NetworkKey } from "@/lib/config";
-import { formatNumberString } from "@/lib/metrics";
+import { formatNumberString, formatNumberStringWhole } from "@/lib/metrics";
+import type { CardData } from "@/lib/types";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 const networkLabels: Record<NetworkKey, string> = {
   mainnet: "Mainnet",
@@ -51,6 +53,7 @@ const emptySupply: SupplyState = {
 };
 
 const storageKey = "pha-dashboard-network";
+const summaryStorageKey = "pha-dashboard-summary-collapsed";
 
 function normalizeNetwork(value: string | null): NetworkKey {
   if (value && NETWORKS.includes(value as NetworkKey)) {
@@ -110,7 +113,12 @@ function toDashboardState(data: DashboardResponse): DashboardState {
   };
 }
 export default function Home() {
-  const [selectedNetwork, setSelectedNetwork] = useState<NetworkKey>("mainnet");
+  const [selectedNetwork, setSelectedNetwork] = useState<NetworkKey>(() => {
+    if (typeof window === "undefined") {
+      return "mainnet";
+    }
+    return readPreferredNetwork() ?? "mainnet";
+  });
   const [dashboard, setDashboard] = useState<DashboardState>(emptyState);
   const [supply, setSupply] = useState<SupplyState>(emptySupply);
   const [cardsStatus, setCardsStatus] = useState<"idle" | "loading" | "refreshing">(
@@ -120,7 +128,14 @@ export default function Home() {
     "loading"
   );
   const [error, setError] = useState<string | null>(null);
-  const [hasResolvedPreference, setHasResolvedPreference] = useState(false);
+  const [hasResolvedPreference, setHasResolvedPreference] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return readPreferredNetwork() !== null;
+  });
+  const [refreshingCards, setRefreshingCards] = useState<Record<string, boolean>>({});
+  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
 
   const skipNextFetch = useRef(false);
   const hasInitialLoad = useRef(false);
@@ -148,6 +163,23 @@ export default function Home() {
   }, [hasResolvedPreference, selectedNetwork]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const stored = window.localStorage.getItem(summaryStorageKey);
+    if (stored) {
+      setSummaryCollapsed(stored === "1");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(summaryStorageKey, summaryCollapsed ? "1" : "0");
+  }, [summaryCollapsed]);
+
+  useEffect(() => {
     let cancelled = false;
     setCardsStatus("loading");
     setSupplyStatus("loading");
@@ -158,6 +190,12 @@ export default function Home() {
       const currentSupplyRequest = ++supplyRequestId.current;
       const preferredNetwork = readPreferredNetwork();
       const initialNetwork = preferredNetwork ?? selectedNetwork;
+
+      if (preferredNetwork && preferredNetwork !== selectedNetwork) {
+        skipNextFetch.current = true;
+        setSelectedNetwork(preferredNetwork);
+      }
+      setHasResolvedPreference(true);
 
       const startSupplyFetch = (network: NetworkKey, requestId: number) => {
         // Fetch supply independently so it can render before slow BP/RPC queries.
@@ -201,8 +239,6 @@ export default function Home() {
           skipNextFetch.current = true;
           setSelectedNetwork(nextNetwork);
         }
-
-        setHasResolvedPreference(true);
 
         setCardsStatus("refreshing");
 
@@ -355,6 +391,13 @@ export default function Home() {
     };
   }, [supply]);
 
+  const supplyCompact = useMemo(() => {
+    return {
+      soul: formatNumberStringWhole(supply.soul),
+      kcal: formatNumberStringWhole(supply.kcal),
+    };
+  }, [supply]);
+
   const statusLabel = useMemo(() => {
     if (cardsStatus === "loading" || supplyStatus === "loading") {
       return "Loading";
@@ -371,6 +414,56 @@ export default function Home() {
     dashboard.cards.length || 0
   );
 
+  const refreshCard = async (card: CardData) => {
+    if (!card.nodeKey) {
+      return;
+    }
+    setRefreshingCards((prev) => ({ ...prev, [card.id]: true }));
+    try {
+      const params = new URLSearchParams({
+        network: selectedNetwork,
+        kind: card.kind,
+        key: card.nodeKey,
+      });
+      const response = await fetch(`/api/node?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const payload = (await response.json()) as { card: CardData };
+      const nextCard = payload.card;
+      setDashboard((prev) => {
+        const cards = prev.cards.map((item) =>
+          item.id === card.id
+            ? {
+                ...item,
+                ...nextCard,
+                id: item.id,
+                kind: item.kind,
+                nodeKey: item.nodeKey ?? nextCard.nodeKey,
+              }
+            : item
+        );
+        const heights = cards
+          .map((item) => item.height)
+          .filter((height): height is number => height !== null);
+        const maxHeight = heights.length ? Math.max(...heights) : null;
+        return { ...prev, cards, maxHeight };
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setDashboard((prev) => ({
+        ...prev,
+        cards: prev.cards.map((item) =>
+          item.id === card.id ? { ...item, error: message } : item
+        ),
+      }));
+    } finally {
+      setRefreshingCards((prev) => ({ ...prev, [card.id]: false }));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-rose-100/40 via-background to-background dark:from-rose-900/30">
       <div className="mx-auto flex w-full flex-col gap-8 px-6 py-10">
@@ -379,7 +472,26 @@ export default function Home() {
             <div className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
               Phantasma Network
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight">Status Dashboard</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <h1 className="text-3xl font-semibold tracking-tight">Status Dashboard</h1>
+              <button
+                type="button"
+                onClick={() => setSummaryCollapsed((prev) => !prev)}
+                className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground"
+                aria-label={summaryCollapsed ? "Expand summary" : "Collapse summary"}
+              >
+                {summaryCollapsed ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                )}
+              </button>
+              {summaryCollapsed ? (
+                <span className="text-xs font-mono text-foreground">
+                  SOUL {supplyCompact.soul} · KCAL {supplyCompact.kcal}
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -390,7 +502,7 @@ export default function Home() {
                   type="button"
                   onClick={() => setSelectedNetwork(network)}
                   className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide transition ${
-                    selectedNetwork === network
+                    hasResolvedPreference && selectedNetwork === network
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
@@ -403,63 +515,65 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Total supply
-            </div>
-            <div className="mt-3 grid gap-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">SOUL</span>
-                <span className="font-mono text-foreground">{supplyLabel.soul}</span>
+        {!summaryCollapsed ? (
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Total supply
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">KCAL</span>
-                <span className="font-mono text-foreground">{supplyLabel.kcal}</span>
+              <div className="mt-3 grid gap-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">SOUL</span>
+                  <span className="font-mono text-foreground">{supplyLabel.soul}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">KCAL</span>
+                  <span className="font-mono text-foreground">{supplyLabel.kcal}</span>
+                </div>
+                {supply.error ? (
+                  <div className="text-xs text-destructive">{supply.error}</div>
+                ) : null}
               </div>
-              {supply.error ? (
-                <div className="text-xs text-destructive">{supply.error}</div>
-              ) : null}
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Summary
+            <div className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Summary
+              </div>
+              <div className="mt-3 text-sm text-muted-foreground">
+                <div className="flex items-center justify-between">
+                  <span>Max height</span>
+                  <span className="font-mono text-foreground">
+                    {dashboard.maxHeight === null
+                      ? "—"
+                      : dashboard.maxHeight.toLocaleString("en-US")}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Total nodes</span>
+                  <span className="font-mono text-foreground">
+                    {dashboard.counts.hosts + dashboard.counts.rpcs}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Status</span>
+                  <span className="font-mono text-foreground">{statusLabel}</span>
+                </div>
+              </div>
             </div>
-            <div className="mt-3 text-sm text-muted-foreground">
-              <div className="flex items-center justify-between">
-                <span>Max height</span>
-                <span className="font-mono text-foreground">
-                  {dashboard.maxHeight === null
-                    ? "—"
-                    : dashboard.maxHeight.toLocaleString("en-US")}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Total nodes</span>
-                <span className="font-mono text-foreground">
-                  {dashboard.counts.hosts + dashboard.counts.rpcs}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Status</span>
-                <span className="font-mono text-foreground">{statusLabel}</span>
-              </div>
-            </div>
-          </div>
 
-          <div className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Config
+            <div className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Config
+              </div>
+              <div className="mt-3 text-sm text-muted-foreground">
+                <div>Network: {networkLabels[selectedNetwork]}</div>
+                <div>Hosts: {dashboard.counts.hosts}</div>
+                <div>RPCs: {dashboard.counts.rpcs}</div>
+              </div>
             </div>
-            <div className="mt-3 text-sm text-muted-foreground">
-              <div>Network: {networkLabels[selectedNetwork]}</div>
-              <div>Hosts: {dashboard.counts.hosts}</div>
-              <div>RPCs: {dashboard.counts.rpcs}</div>
-            </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
 
         {error ? (
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
@@ -475,7 +589,13 @@ export default function Home() {
           }}
         >
           {dashboard.cards.map((card) => (
-            <StatusCard key={card.id} card={card} maxHeight={dashboard.maxHeight} />
+            <StatusCard
+              key={card.id}
+              card={card}
+              maxHeight={dashboard.maxHeight}
+              onRefresh={() => refreshCard(card)}
+              refreshing={Boolean(refreshingCards[card.id])}
+            />
           ))}
           {cardsStatus === "loading" && dashboard.cards.length === 0
             ? Array.from({ length: placeholderCount }).map((_, index) => (
