@@ -151,6 +151,8 @@ export default function Home() {
   });
   const dashboardRequestId = useRef(0);
   const supplyRequestId = useRef(0);
+  const nodeRequestId = useRef(0);
+  const pendingNodeLoads = useRef(0);
 
   useEffect(() => {
     if (!hasResolvedPreference || typeof window === "undefined") {
@@ -184,6 +186,7 @@ export default function Home() {
     setCardsStatus("loading");
     setSupplyStatus("loading");
     setError(null);
+    setRefreshingCards({});
 
     const loadInitial = async () => {
       const currentDashboardRequest = ++dashboardRequestId.current;
@@ -240,27 +243,8 @@ export default function Home() {
           setSelectedNetwork(nextNetwork);
         }
 
-        setCardsStatus("refreshing");
-
-        void (async () => {
-          try {
-            const fullData = await requestDashboard(nextNetwork, false);
-            if (!cancelled && dashboardRequestId.current === currentDashboardRequest) {
-              const fullState = toDashboardState(fullData);
-              setDashboard(fullState);
-              dashboardCache.current[nextNetwork] = fullState;
-              setError(null);
-            }
-          } catch (err) {
-            if (!cancelled && dashboardRequestId.current === currentDashboardRequest) {
-              setError(err instanceof Error ? err.message : String(err));
-            }
-          } finally {
-            if (!cancelled && dashboardRequestId.current === currentDashboardRequest) {
-              setCardsStatus("idle");
-            }
-          }
-        })();
+        const currentNodeRequest = ++nodeRequestId.current;
+        startNodeLoads(liteState.cards, nextNetwork, currentNodeRequest);
 
         if (nextNetwork !== initialNetwork) {
           const nextSupplyRequest = ++supplyRequestId.current;
@@ -270,6 +254,7 @@ export default function Home() {
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
+          setCardsStatus("idle");
         }
       } finally {
         if (!cancelled) {
@@ -315,10 +300,12 @@ export default function Home() {
     }
 
     setError(null);
+    setRefreshingCards({});
 
     const loadNetwork = async () => {
       const currentDashboardRequest = ++dashboardRequestId.current;
       const currentSupplyRequest = ++supplyRequestId.current;
+      const currentNodeRequest = ++nodeRequestId.current;
       if (!cachedDashboard) {
         try {
           const liteData = await requestDashboard(selectedNetwork, true);
@@ -326,33 +313,17 @@ export default function Home() {
             const liteState = toDashboardState(liteData);
             setDashboard(liteState);
             dashboardCache.current[selectedNetwork] = liteState;
+            startNodeLoads(liteState.cards, selectedNetwork, currentNodeRequest);
           }
         } catch (err) {
           if (!cancelled) {
             setError(err instanceof Error ? err.message : String(err));
-          }
-        }
-      }
-
-      void (async () => {
-        try {
-          const fullData = await requestDashboard(selectedNetwork, false);
-          if (!cancelled && dashboardRequestId.current === currentDashboardRequest) {
-            const fullState = toDashboardState(fullData);
-            setDashboard(fullState);
-            dashboardCache.current[selectedNetwork] = fullState;
-            setError(null);
-          }
-        } catch (err) {
-          if (!cancelled && dashboardRequestId.current === currentDashboardRequest) {
-            setError(err instanceof Error ? err.message : String(err));
-          }
-        } finally {
-          if (!cancelled && dashboardRequestId.current === currentDashboardRequest) {
             setCardsStatus("idle");
           }
         }
-      })();
+      } else if (!cancelled && dashboardRequestId.current === currentDashboardRequest) {
+        startNodeLoads(cachedDashboard.cards, selectedNetwork, currentNodeRequest);
+      }
 
       void (async () => {
         try {
@@ -414,51 +385,133 @@ export default function Home() {
     dashboard.cards.length || 0
   );
 
+  const updateDashboardState = (
+    network: NetworkKey,
+    updater: (previous: DashboardState) => DashboardState
+  ) => {
+    setDashboard((previous) => {
+      const next = updater(previous);
+      dashboardCache.current[network] = next;
+      return next;
+    });
+  };
+
+  const mergeCardUpdate = (
+    previous: DashboardState,
+    cardId: string,
+    nextCard: CardData
+  ): DashboardState => {
+    const cards = previous.cards.map((item) =>
+      item.id === cardId
+        ? {
+            ...item,
+            ...nextCard,
+            // Preserve stable IDs and kinds from the shell list.
+            id: item.id,
+            kind: item.kind,
+            nodeKey: item.nodeKey ?? nextCard.nodeKey,
+          }
+        : item
+    );
+    const heights = cards
+      .map((item) => item.height)
+      .filter((height): height is number => height !== null);
+    const maxHeight = heights.length ? Math.max(...heights) : null;
+    return { ...previous, cards, maxHeight };
+  };
+
+  const applyCardError = (
+    previous: DashboardState,
+    cardId: string,
+    message: string
+  ): DashboardState => ({
+    ...previous,
+    cards: previous.cards.map((item) =>
+      item.id === cardId ? { ...item, error: message } : item
+    ),
+  });
+
+  const requestNodeCard = async (network: NetworkKey, card: CardData) => {
+    if (!card.nodeKey) {
+      throw new Error("Missing node key");
+    }
+    const params = new URLSearchParams({
+      network,
+      kind: card.kind,
+      key: card.nodeKey,
+    });
+    const response = await fetch(`/api/node?${params.toString()}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = (await response.json()) as { card: CardData };
+    return payload.card;
+  };
+
+  const startNodeLoads = (cards: CardData[], network: NetworkKey, requestId: number) => {
+    const targets = cards.filter((card) => card.nodeKey);
+    pendingNodeLoads.current = targets.length;
+    if (pendingNodeLoads.current === 0) {
+      setCardsStatus("idle");
+      return;
+    }
+    setCardsStatus("refreshing");
+
+    for (const card of targets) {
+      void (async () => {
+        try {
+          const nextCard = await requestNodeCard(network, card);
+          if (nodeRequestId.current !== requestId) {
+            return;
+          }
+          updateDashboardState(network, (previous) =>
+            mergeCardUpdate(previous, card.id, nextCard)
+          );
+        } catch (err) {
+          if (nodeRequestId.current !== requestId) {
+            return;
+          }
+          const message = err instanceof Error ? err.message : String(err);
+          updateDashboardState(network, (previous) =>
+            applyCardError(previous, card.id, message)
+          );
+        } finally {
+          if (nodeRequestId.current !== requestId) {
+            return;
+          }
+          pendingNodeLoads.current = Math.max(0, pendingNodeLoads.current - 1);
+          if (pendingNodeLoads.current === 0) {
+            setCardsStatus("idle");
+          }
+        }
+      })();
+    }
+  };
+
   const refreshCard = async (card: CardData) => {
     if (!card.nodeKey) {
       return;
     }
+    const currentNodeRequest = nodeRequestId.current;
     setRefreshingCards((prev) => ({ ...prev, [card.id]: true }));
     try {
-      const params = new URLSearchParams({
-        network: selectedNetwork,
-        kind: card.kind,
-        key: card.nodeKey,
-      });
-      const response = await fetch(`/api/node?${params.toString()}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      const nextCard = await requestNodeCard(selectedNetwork, card);
+      if (nodeRequestId.current !== currentNodeRequest) {
+        return;
       }
-      const payload = (await response.json()) as { card: CardData };
-      const nextCard = payload.card;
-      setDashboard((prev) => {
-        const cards = prev.cards.map((item) =>
-          item.id === card.id
-            ? {
-                ...item,
-                ...nextCard,
-                id: item.id,
-                kind: item.kind,
-                nodeKey: item.nodeKey ?? nextCard.nodeKey,
-              }
-            : item
-        );
-        const heights = cards
-          .map((item) => item.height)
-          .filter((height): height is number => height !== null);
-        const maxHeight = heights.length ? Math.max(...heights) : null;
-        return { ...prev, cards, maxHeight };
-      });
+      updateDashboardState(selectedNetwork, (previous) =>
+        mergeCardUpdate(previous, card.id, nextCard)
+      );
     } catch (err) {
+      if (nodeRequestId.current !== currentNodeRequest) {
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
-      setDashboard((prev) => ({
-        ...prev,
-        cards: prev.cards.map((item) =>
-          item.id === card.id ? { ...item, error: message } : item
-        ),
-      }));
+      updateDashboardState(selectedNetwork, (previous) =>
+        applyCardError(previous, card.id, message)
+      );
     } finally {
       setRefreshingCards((prev) => ({ ...prev, [card.id]: false }));
     }
