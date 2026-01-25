@@ -11,6 +11,7 @@ export type CardData = {
   rpcFirstResponseMs?: number | null;
   rpcAverageResponseMs?: number | null;
   rpcVersion?: string | null;
+  bpBuildVersion?: string | null;
   rpcCommit?: string | null;
   rpcBuildTimeUtc?: string | null;
   heights?: BlockHeights | null;

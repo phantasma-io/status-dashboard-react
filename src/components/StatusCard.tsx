@@ -52,6 +52,18 @@ function formatBuildTime(value: string | null | undefined): string {
 
 
 
+// BP build strings start with compiler/platform details; show from build date onward.
+function formatBpBuildVersion(value: string | null | undefined): string {
+  if (!value) {
+    return "—";
+  }
+  const match = value.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/);
+  if (!match || match.index === undefined) {
+    return value;
+  }
+  return value.slice(match.index).trim();
+}
+
 function resolveRoleTone(value: string | null | undefined) {
   const normalized = value?.toLowerCase() ?? "watcher";
   if (normalized === "watcher") {
@@ -245,6 +257,12 @@ export function StatusCard({
             </span>
             <span>
               Tx/block: <span className="text-foreground/80">{card.avgTransactions?.toFixed(1) ?? "—"}</span>
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span>Build:</span>
+            <span className="font-mono text-foreground/80 break-all">
+              {formatBpBuildVersion(card.bpBuildVersion)}
             </span>
           </div>
         </div>

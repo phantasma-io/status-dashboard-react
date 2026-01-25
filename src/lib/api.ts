@@ -26,6 +26,7 @@ export type TokenInfo = {
 
 export type StatusSummary = {
   name?: string;
+  appVersion?: string;
   nowMs?: number;
   cpu?: number;
   ram?: number;
@@ -258,6 +259,7 @@ function parseStatus(payload: unknown): StatusSummary {
 
   return {
     name: readString(result.name) ?? undefined,
+    appVersion: readString(result.app_version) ?? undefined,
     nowMs: readNumber(result.now) ?? undefined,
     cpu: readNumber(result.cpu) ?? undefined,
     ram: readNumber(result.ram) ?? undefined,

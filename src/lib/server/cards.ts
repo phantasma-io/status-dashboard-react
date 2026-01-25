@@ -107,6 +107,7 @@ export async function buildBpCard({
     title: entry.title,
     height: heights?.applied ?? null,
     heights,
+    bpBuildVersion: status?.appVersion ?? null,
     leader: summary.leader,
     lastAppliedAgeSec: summary.lastAppliedAgeSec,
     avgProductionDelayMs: summary.avgProductionDelayMs,
