@@ -73,6 +73,26 @@ function resolveRoleTone(value: string | null | undefined) {
   return "neutral";
 }
 
+function resolveExplorerBlockUrl(
+  explorerUrl: string | null | undefined,
+  height: number | null | undefined
+): string | null {
+  if (!explorerUrl || height === null || height === undefined) {
+    return null;
+  }
+  try {
+    const url = new URL(explorerUrl);
+    const match = url.pathname.match(/^\/([a-z]{2})(?:\/|$)/i);
+    const locale = match?.[1] ?? "en";
+    url.pathname = `/${locale}/block`;
+    url.search = `?id=${height}`;
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function StatusCard({
   card,
   maxHeight,
@@ -125,6 +145,10 @@ export function StatusCard({
   const deltaTitle = "Delta from max applied height across BP/RPC nodes";
   const explorerLink = card.kind === "explorer" ? card.explorerUrl : null;
   const explorerApiLink = card.kind === "explorer" ? card.explorerApiUrl : null;
+  const explorerBlockLink =
+    card.kind === "explorer"
+      ? resolveExplorerBlockUrl(card.explorerUrl, card.explorerLastBlockHeight)
+      : null;
   const rpcLink = card.kind === "rpc" ? card.rpcDocsUrl : null;
 
   return (
@@ -198,7 +222,21 @@ export function StatusCard({
             className={`text-3xl font-semibold ${toneStyles[tone]}`}
             title={heightTitle}
           >
-            {formatHeight(card.height)}
+            <span className="inline-flex items-center gap-2">
+              <span>{formatHeight(card.height)}</span>
+              {explorerBlockLink ? (
+                <a
+                  href={explorerBlockLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-md border border-border bg-card p-1 text-muted-foreground hover:text-foreground"
+                  aria-label="Open explorer block"
+                  title="Open block"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              ) : null}
+            </span>
           </div>
           <div
             className={`text-sm font-medium ${toneStyles[tone]}`}

@@ -39,6 +39,7 @@ describe("metrics", () => {
 
   it("formats millisecond delays using the same compact units", () => {
     // Millisecond inputs should map to the same unit logic.
+    expect(formatMilliseconds(950)).toBe("950ms");
     expect(formatMilliseconds(1500)).toBe("1.5s");
     expect(formatMilliseconds(60000)).toBe("1.0m");
   });

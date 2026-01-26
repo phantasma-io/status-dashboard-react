@@ -70,6 +70,9 @@ export function formatMilliseconds(value: number | null): string {
   if (value === null) {
     return "—";
   }
+  if (Math.abs(value) < 1000) {
+    return `${Math.round(value)}ms`;
+  }
   return formatDurationSeconds(value / 1000);
 }
 
