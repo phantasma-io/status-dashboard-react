@@ -399,20 +399,32 @@ export default function Home() {
   const mergeCardUpdate = (
     previous: DashboardState,
     cardId: string,
-    nextCard: CardData
+    nextCard: CardData,
+    options?: { ignoreNulls?: boolean }
   ): DashboardState => {
-    const cards = previous.cards.map((item) =>
-      item.id === cardId
-        ? {
-            ...item,
-            ...nextCard,
-            // Preserve stable IDs and kinds from the shell list.
-            id: item.id,
-            kind: item.kind,
-            nodeKey: item.nodeKey ?? nextCard.nodeKey,
+    const cards = previous.cards.map((item) => {
+      if (item.id !== cardId) {
+        return item;
+      }
+      const merged = {
+        ...item,
+        ...nextCard,
+      } as Record<string, unknown>;
+      if (options?.ignoreNulls) {
+        for (const [key, value] of Object.entries(nextCard)) {
+          if (value === null || value === undefined) {
+            merged[key] = (item as Record<string, unknown>)[key];
           }
-        : item
-    );
+        }
+      }
+      return {
+        ...(merged as CardData),
+        // Preserve stable IDs and kinds from the shell list.
+        id: item.id,
+        kind: item.kind,
+        nodeKey: item.nodeKey ?? nextCard.nodeKey,
+      };
+    });
     const heights = cards
       .filter((item) => item.kind !== "explorer")
       .map((item) => item.height)
@@ -435,7 +447,7 @@ export default function Home() {
   const requestNodeCard = async (
     network: NetworkKey,
     card: CardData,
-    options?: { latency?: boolean }
+    options?: { latency?: boolean; part?: string }
   ) => {
     if (!card.nodeKey) {
       throw new Error("Missing node key");
@@ -445,7 +457,9 @@ export default function Home() {
       kind: card.kind,
       key: card.nodeKey,
     });
-    if (options?.latency) {
+    if (options?.part) {
+      params.set("part", options.part);
+    } else if (options?.latency) {
       params.set("latency", "1");
     }
     const response = await fetch(`/api/node?${params.toString()}`, {
@@ -467,56 +481,60 @@ export default function Home() {
     }
     setCardsStatus("refreshing");
 
-    for (const card of targets) {
+    const finishPrimary = () => {
+      if (nodeRequestId.current !== requestId) {
+        return;
+      }
+      pendingNodeLoads.current = Math.max(0, pendingNodeLoads.current - 1);
+      if (pendingNodeLoads.current === 0) {
+        setCardsStatus("idle");
+      }
+    };
+
+    const requestAndApply = (card: CardData, options: {
+      part?: string;
+      ignoreNulls?: boolean;
+      suppressError?: boolean;
+      onFinally?: () => void;
+    }) => {
       void (async () => {
         try {
-          const nextCard = await requestNodeCard(network, card);
+          const nextCard = await requestNodeCard(network, card, { part: options.part });
           if (nodeRequestId.current !== requestId) {
             return;
           }
           updateDashboardState(network, (previous) =>
-            mergeCardUpdate(previous, card.id, nextCard)
+            mergeCardUpdate(previous, card.id, nextCard, { ignoreNulls: options.ignoreNulls })
           );
-
-          if (card.kind === "rpc") {
-            void (async () => {
-              try {
-                const latencyCard = await requestNodeCard(network, card, { latency: true });
-                if (nodeRequestId.current !== requestId) {
-                  return;
-                }
-                updateDashboardState(network, (previous) =>
-                  mergeCardUpdate(previous, card.id, latencyCard)
-                );
-              } catch (err) {
-                if (nodeRequestId.current !== requestId) {
-                  return;
-                }
-                const message = err instanceof Error ? err.message : String(err);
-                updateDashboardState(network, (previous) =>
-                  applyCardError(previous, card.id, message)
-                );
-              }
-            })();
-          }
         } catch (err) {
           if (nodeRequestId.current !== requestId) {
             return;
           }
-          const message = err instanceof Error ? err.message : String(err);
-          updateDashboardState(network, (previous) =>
-            applyCardError(previous, card.id, message)
-          );
+          if (!options.suppressError) {
+            const message = err instanceof Error ? err.message : String(err);
+            updateDashboardState(network, (previous) =>
+              applyCardError(previous, card.id, message)
+            );
+          }
         } finally {
-          if (nodeRequestId.current !== requestId) {
-            return;
-          }
-          pendingNodeLoads.current = Math.max(0, pendingNodeLoads.current - 1);
-          if (pendingNodeLoads.current === 0) {
-            setCardsStatus("idle");
-          }
+          options.onFinally?.();
         }
       })();
+    };
+
+    for (const card of targets) {
+      if (card.kind === "bp") {
+        requestAndApply(card, { part: "heights", onFinally: finishPrimary });
+        requestAndApply(card, { part: "status", ignoreNulls: true });
+        continue;
+      }
+      if (card.kind === "rpc") {
+        requestAndApply(card, { part: "height", onFinally: finishPrimary });
+        requestAndApply(card, { part: "version", ignoreNulls: true });
+        requestAndApply(card, { part: "latency", ignoreNulls: true, suppressError: true });
+        continue;
+      }
+      requestAndApply(card, { onFinally: finishPrimary });
     }
   };
 
@@ -526,44 +544,64 @@ export default function Home() {
     }
     const currentNodeRequest = nodeRequestId.current;
     setRefreshingCards((prev) => ({ ...prev, [card.id]: true }));
-    try {
-      const nextCard = await requestNodeCard(selectedNetwork, card);
+
+    const applyUpdate = (nextCard: CardData, ignoreNulls?: boolean) => {
+      updateDashboardState(selectedNetwork, (previous) =>
+        mergeCardUpdate(previous, card.id, nextCard, { ignoreNulls })
+      );
+    };
+
+    const applyError = (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      updateDashboardState(selectedNetwork, (previous) =>
+        applyCardError(previous, card.id, message)
+      );
+    };
+
+    const runPart = async (part?: string, options?: { ignoreNulls?: boolean; suppressError?: boolean }) => {
+      const nextCard = await requestNodeCard(selectedNetwork, card, { part });
       if (nodeRequestId.current !== currentNodeRequest) {
         return;
       }
-      updateDashboardState(selectedNetwork, (previous) =>
-        mergeCardUpdate(previous, card.id, nextCard)
-      );
+      applyUpdate(nextCard, options?.ignoreNulls);
+    };
 
-      if (card.kind === "rpc") {
+    try {
+      if (card.kind === "bp") {
+        await runPart("heights");
         void (async () => {
           try {
-            const latencyCard = await requestNodeCard(selectedNetwork, card, { latency: true });
-            if (nodeRequestId.current !== currentNodeRequest) {
-              return;
-            }
-            updateDashboardState(selectedNetwork, (previous) =>
-              mergeCardUpdate(previous, card.id, latencyCard)
-            );
+            await runPart("status", { ignoreNulls: true });
           } catch (err) {
-            if (nodeRequestId.current !== currentNodeRequest) {
-              return;
-            }
-            const message = err instanceof Error ? err.message : String(err);
-            updateDashboardState(selectedNetwork, (previous) =>
-              applyCardError(previous, card.id, message)
-            );
+            if (nodeRequestId.current !== currentNodeRequest) return;
+            applyError(err);
           }
         })();
+      } else if (card.kind === "rpc") {
+        await runPart("height");
+        void (async () => {
+          try {
+            await runPart("version", { ignoreNulls: true });
+          } catch (err) {
+            if (nodeRequestId.current !== currentNodeRequest) return;
+            applyError(err);
+          }
+        })();
+        void (async () => {
+          try {
+            await runPart("latency", { ignoreNulls: true, suppressError: true });
+          } catch {
+            // ignore latency errors on refresh
+          }
+        })();
+      } else {
+        await runPart();
       }
     } catch (err) {
       if (nodeRequestId.current !== currentNodeRequest) {
         return;
       }
-      const message = err instanceof Error ? err.message : String(err);
-      updateDashboardState(selectedNetwork, (previous) =>
-        applyCardError(previous, card.id, message)
-      );
+      applyError(err);
     } finally {
       setRefreshingCards((prev) => ({ ...prev, [card.id]: false }));
     }

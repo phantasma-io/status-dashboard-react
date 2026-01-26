@@ -82,6 +82,22 @@ type TimedResult<T> = {
   error: unknown | null;
 };
 
+function baseCard(options: {
+  id: string;
+  nodeKey: string;
+  kind: CardData["kind"];
+  title: string;
+  height: number | null;
+}): CardData {
+  return {
+    id: options.id,
+    nodeKey: options.nodeKey,
+    kind: options.kind,
+    title: options.title,
+    height: options.height,
+  };
+}
+
 export function resolveRpcDocsUrl(rpcUrl: string): string | null {
   try {
     const url = new URL(rpcUrl);
@@ -145,6 +161,70 @@ async function runTimed<T>(action: () => Promise<T>): Promise<TimedResult<T>> {
   }
 }
 
+export async function buildBpHeightsCard({
+  id,
+  nodeKey,
+  entry,
+  timeoutMs,
+}: BpCardOptions): Promise<CardData> {
+  let heights: BlockHeights | null = null;
+  let error: string | null = null;
+
+  try {
+    heights = await fetchBlockHeights(entry.url, timeoutMs);
+  } catch (err) {
+    error = sanitizeError(err);
+  }
+
+  return {
+    ...baseCard({
+      id,
+      nodeKey,
+      kind: "bp",
+      title: entry.title,
+      height: heights?.applied ?? null,
+    }),
+    heights,
+    error,
+  };
+}
+
+export async function buildBpStatusCard({
+  id,
+  nodeKey,
+  entry,
+  timeoutMs,
+}: BpCardOptions): Promise<CardData> {
+  let status: StatusSummary | null = null;
+  let error: string | null = null;
+
+  try {
+    status = await fetchStatusSummary(entry.url, timeoutMs);
+  } catch (err) {
+    error = sanitizeError(err);
+  }
+
+  const summary = summarizeBlocks(status);
+
+  return {
+    ...baseCard({
+      id,
+      nodeKey,
+      kind: "bp",
+      title: entry.title,
+      height: null,
+    }),
+    bpBuildVersion: status?.appVersion ?? null,
+    leader: summary.leader,
+    lastAppliedAgeSec: summary.lastAppliedAgeSec,
+    avgProductionDelayMs: summary.avgProductionDelayMs,
+    avgVerificationDelayMs: summary.avgVerificationDelayMs,
+    avgTransactions: summary.avgTransactions,
+    sparkline: summary.sparkline,
+    error,
+  };
+}
+
 export async function buildBpCard({
   id,
   nodeKey,
@@ -175,11 +255,13 @@ export async function buildBpCard({
   const summary = summarizeBlocks(status);
 
   return {
-    id,
-    nodeKey,
-    kind: "bp",
-    title: entry.title,
-    height: heights?.applied ?? null,
+    ...baseCard({
+      id,
+      nodeKey,
+      kind: "bp",
+      title: entry.title,
+      height: heights?.applied ?? null,
+    }),
     heights,
     bpBuildVersion: status?.appVersion ?? null,
     leader: summary.leader,
@@ -190,6 +272,95 @@ export async function buildBpCard({
     sparkline: summary.sparkline,
     role: entry.role ?? "Watcher",
     error,
+  };
+}
+
+export async function buildRpcHeightCard({
+  id,
+  nodeKey,
+  entry,
+  timeoutMs,
+}: RpcCardOptions): Promise<CardData> {
+  let height: number | null = null;
+  let error: string | null = null;
+
+  try {
+    height = await fetchRpcHeight(entry.url, timeoutMs);
+  } catch (err) {
+    error = sanitizeError(err);
+  }
+
+  return {
+    ...baseCard({
+      id,
+      nodeKey,
+      kind: "rpc",
+      title: entry.title,
+      height,
+    }),
+    error,
+  };
+}
+
+export async function buildRpcVersionCard({
+  id,
+  nodeKey,
+  entry,
+  timeoutMs,
+}: RpcCardOptions): Promise<CardData> {
+  let info: RpcBuildInfo | null = null;
+  let error: string | null = null;
+
+  try {
+    info = await fetchRpcVersion(entry.url, timeoutMs);
+  } catch (err) {
+    error = sanitizeError(err);
+  }
+
+  return {
+    ...baseCard({
+      id,
+      nodeKey,
+      kind: "rpc",
+      title: entry.title,
+      height: null,
+    }),
+    rpcVersion: info?.version ?? null,
+    rpcCommit: info?.commit ?? null,
+    rpcBuildTimeUtc: info?.buildTimeUtc ?? null,
+    error,
+  };
+}
+
+export async function buildRpcLatencyCard({
+  id,
+  nodeKey,
+  entry,
+  timeoutMs,
+}: RpcCardOptions): Promise<CardData> {
+  const firstSample = await sampleRpcVersion(entry.url, timeoutMs);
+  const extraSamples = await Promise.all(
+    Array.from({ length: 4 }, () => sampleRpcVersion(entry.url, timeoutMs))
+  );
+
+  const samples = [firstSample, ...extraSamples];
+  const successful = samples.filter((sample) => sample.info !== null);
+  const durations = successful.map((sample) => sample.durationMs);
+  const avgResponseMs =
+    durations.length > 0
+      ? durations.reduce((sum, value) => sum + value, 0) / durations.length
+      : null;
+
+  return {
+    ...baseCard({
+      id,
+      nodeKey,
+      kind: "rpc",
+      title: entry.title,
+      height: null,
+    }),
+    rpcFirstResponseMs: firstSample.durationMs,
+    rpcAverageResponseMs: avgResponseMs,
   };
 }
 
@@ -228,11 +399,13 @@ export async function buildRpcCard({
   const heightError = heightResult.error ? sanitizeError(heightResult.error) : null;
 
   return {
-    id,
-    nodeKey,
-    kind: "rpc",
-    title: entry.title,
-    height: heightResult.height,
+    ...baseCard({
+      id,
+      nodeKey,
+      kind: "rpc",
+      title: entry.title,
+      height: heightResult.height,
+    }),
     rpcFirstResponseMs: firstSample.durationMs,
     rpcAverageResponseMs: avgResponseMs,
     rpcVersion: versionInfo?.version ?? null,
@@ -267,11 +440,13 @@ export async function buildExplorerCard({
   }
 
   return {
-    id,
-    nodeKey,
-    kind: "explorer",
-    title: entry.title ?? nodeKey,
-    height,
+    ...baseCard({
+      id,
+      nodeKey,
+      kind: "explorer",
+      title: entry.title ?? nodeKey,
+      height,
+    }),
     explorerUrl: entry.url,
     explorerApiUrl: resolveExplorerDocsUrl(entry.apiUrl),
     explorerLastBlockHeight: lastBlockHeight,

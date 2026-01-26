@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
-import { buildBpCard, buildExplorerCard, buildRpcCard } from "@/lib/server/cards";
+import {
+  buildBpCard,
+  buildBpHeightsCard,
+  buildBpStatusCard,
+  buildExplorerCard,
+  buildRpcCard,
+  buildRpcHeightCard,
+  buildRpcLatencyCard,
+  buildRpcVersionCard,
+} from "@/lib/server/cards";
 import {
   loadDashboardConfig,
   normalizeNetwork,
@@ -15,6 +24,7 @@ export async function GET(request: Request) {
   const kind = url.searchParams.get("kind");
   const key = url.searchParams.get("key");
   const latency = url.searchParams.get("latency") === "1";
+  const part = url.searchParams.get("part");
 
   if (!key || (kind !== "bp" && kind !== "rpc" && kind !== "explorer")) {
     return NextResponse.json({ error: "Invalid node selection" }, { status: 400 });
@@ -30,12 +40,31 @@ export async function GET(request: Request) {
       if (!entry) {
         return NextResponse.json({ error: "Unknown host" }, { status: 404 });
       }
-      const card = await buildBpCard({
-        id: `bp-${key}`,
-        nodeKey: key,
-        entry,
-        timeoutMs,
-      });
+      let card;
+      if (part === "heights") {
+        card = await buildBpHeightsCard({
+          id: `bp-${key}`,
+          nodeKey: key,
+          entry,
+          timeoutMs,
+        });
+      } else if (part === "status") {
+        card = await buildBpStatusCard({
+          id: `bp-${key}`,
+          nodeKey: key,
+          entry,
+          timeoutMs,
+        });
+      } else if (part) {
+        return NextResponse.json({ error: "Unsupported part" }, { status: 400 });
+      } else {
+        card = await buildBpCard({
+          id: `bp-${key}`,
+          nodeKey: key,
+          entry,
+          timeoutMs,
+        });
+      }
       return NextResponse.json({ network, card });
     }
 
@@ -44,13 +73,39 @@ export async function GET(request: Request) {
       if (!entry) {
         return NextResponse.json({ error: "Unknown RPC" }, { status: 404 });
       }
-      const card = await buildRpcCard({
-        id: `rpc-${key}`,
-        nodeKey: key,
-        entry,
-        timeoutMs,
-        includeLatencySamples: latency,
-      });
+      let card;
+      if (part === "height") {
+        card = await buildRpcHeightCard({
+          id: `rpc-${key}`,
+          nodeKey: key,
+          entry,
+          timeoutMs,
+        });
+      } else if (part === "version") {
+        card = await buildRpcVersionCard({
+          id: `rpc-${key}`,
+          nodeKey: key,
+          entry,
+          timeoutMs,
+        });
+      } else if (part === "latency") {
+        card = await buildRpcLatencyCard({
+          id: `rpc-${key}`,
+          nodeKey: key,
+          entry,
+          timeoutMs,
+        });
+      } else if (part) {
+        return NextResponse.json({ error: "Unsupported part" }, { status: 400 });
+      } else {
+        card = await buildRpcCard({
+          id: `rpc-${key}`,
+          nodeKey: key,
+          entry,
+          timeoutMs,
+          includeLatencySamples: latency,
+        });
+      }
       return NextResponse.json({ network, card });
     }
 
