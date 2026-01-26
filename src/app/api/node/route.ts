@@ -14,6 +14,7 @@ export async function GET(request: Request) {
   const timeoutMs = readTimeoutMs();
   const kind = url.searchParams.get("kind");
   const key = url.searchParams.get("key");
+  const latency = url.searchParams.get("latency") === "1";
 
   if (!key || (kind !== "bp" && kind !== "rpc" && kind !== "explorer")) {
     return NextResponse.json({ error: "Invalid node selection" }, { status: 400 });
@@ -48,6 +49,7 @@ export async function GET(request: Request) {
         nodeKey: key,
         entry,
         timeoutMs,
+        includeLatencySamples: latency,
       });
       return NextResponse.json({ network, card });
     }

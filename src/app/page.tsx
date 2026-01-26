@@ -432,7 +432,11 @@ export default function Home() {
     ),
   });
 
-  const requestNodeCard = async (network: NetworkKey, card: CardData) => {
+  const requestNodeCard = async (
+    network: NetworkKey,
+    card: CardData,
+    options?: { latency?: boolean }
+  ) => {
     if (!card.nodeKey) {
       throw new Error("Missing node key");
     }
@@ -441,6 +445,9 @@ export default function Home() {
       kind: card.kind,
       key: card.nodeKey,
     });
+    if (options?.latency) {
+      params.set("latency", "1");
+    }
     const response = await fetch(`/api/node?${params.toString()}`, {
       cache: "no-store",
     });
@@ -470,6 +477,28 @@ export default function Home() {
           updateDashboardState(network, (previous) =>
             mergeCardUpdate(previous, card.id, nextCard)
           );
+
+          if (card.kind === "rpc") {
+            void (async () => {
+              try {
+                const latencyCard = await requestNodeCard(network, card, { latency: true });
+                if (nodeRequestId.current !== requestId) {
+                  return;
+                }
+                updateDashboardState(network, (previous) =>
+                  mergeCardUpdate(previous, card.id, latencyCard)
+                );
+              } catch (err) {
+                if (nodeRequestId.current !== requestId) {
+                  return;
+                }
+                const message = err instanceof Error ? err.message : String(err);
+                updateDashboardState(network, (previous) =>
+                  applyCardError(previous, card.id, message)
+                );
+              }
+            })();
+          }
         } catch (err) {
           if (nodeRequestId.current !== requestId) {
             return;
@@ -505,6 +534,28 @@ export default function Home() {
       updateDashboardState(selectedNetwork, (previous) =>
         mergeCardUpdate(previous, card.id, nextCard)
       );
+
+      if (card.kind === "rpc") {
+        void (async () => {
+          try {
+            const latencyCard = await requestNodeCard(selectedNetwork, card, { latency: true });
+            if (nodeRequestId.current !== currentNodeRequest) {
+              return;
+            }
+            updateDashboardState(selectedNetwork, (previous) =>
+              mergeCardUpdate(previous, card.id, latencyCard)
+            );
+          } catch (err) {
+            if (nodeRequestId.current !== currentNodeRequest) {
+              return;
+            }
+            const message = err instanceof Error ? err.message : String(err);
+            updateDashboardState(selectedNetwork, (previous) =>
+              applyCardError(previous, card.id, message)
+            );
+          }
+        })();
+      }
     } catch (err) {
       if (nodeRequestId.current !== currentNodeRequest) {
         return;

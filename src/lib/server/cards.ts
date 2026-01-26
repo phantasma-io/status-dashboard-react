@@ -6,7 +6,6 @@ import type {
 } from "@/lib/api";
 import {
   fetchBlockHeights,
-  fetchExplorerChainHeight,
   fetchExplorerLatestBlock,
   fetchRpcHeight,
   fetchRpcVersion,
@@ -61,6 +60,7 @@ type RpcCardOptions = {
   nodeKey: string;
   entry: RpcEntry;
   timeoutMs: number;
+  includeLatencySamples?: boolean;
 };
 
 type ExplorerCardOptions = {
@@ -181,22 +181,26 @@ export async function buildRpcCard({
   nodeKey,
   entry,
   timeoutMs,
+  includeLatencySamples,
 }: RpcCardOptions): Promise<CardData> {
+  const shouldSampleLatency = includeLatencySamples ?? true;
   const heightPromise = fetchRpcHeight(entry.url, timeoutMs)
     .then((height) => ({ height, error: null as unknown | null }))
     .catch((error) => ({ height: null, error }));
 
   const firstSample = await sampleRpcVersion(entry.url, timeoutMs);
-  const extraSamples = await Promise.all(
-    Array.from({ length: 4 }, () => sampleRpcVersion(entry.url, timeoutMs))
-  );
+  const extraSamples = shouldSampleLatency
+    ? await Promise.all(
+        Array.from({ length: 4 }, () => sampleRpcVersion(entry.url, timeoutMs))
+      )
+    : [];
   const heightResult = await heightPromise;
 
   const samples = [firstSample, ...extraSamples];
   const successful = samples.filter((sample) => sample.info !== null);
   const durations = successful.map((sample) => sample.durationMs);
   const avgResponseMs =
-    durations.length > 0
+    shouldSampleLatency && durations.length > 0
       ? durations.reduce((sum, value) => sum + value, 0) / durations.length
       : null;
   const versionInfo = successful[0]?.info ?? null;
@@ -230,32 +234,19 @@ export async function buildExplorerCard({
 }: ExplorerCardOptions): Promise<CardData> {
   let error: string | null = null;
 
-  const [chainResult, blockResult] = await Promise.all([
-    runTimed(() => fetchExplorerChainHeight(entry.apiUrl, timeoutMs)),
-    runTimed(() => fetchExplorerLatestBlock(entry.apiUrl, timeoutMs)),
-  ]);
-
-  const chainHeight = chainResult.value;
+  const blockResult = await runTimed(() => fetchExplorerLatestBlock(entry.apiUrl, timeoutMs));
   const blockInfo: ExplorerLatestBlock | null = blockResult.value;
-  const height = chainHeight ?? blockInfo?.height ?? null;
+  const height = blockInfo?.height ?? null;
   const lastBlockHeight = blockInfo?.height ?? null;
   const lastBlockAgeSec =
     blockInfo?.dateSec === null || blockInfo?.dateSec === undefined
       ? null
       : Math.max(0, Date.now() / 1000 - blockInfo.dateSec);
 
-  const responseCandidates = [chainResult, blockResult]
-    .filter((result) => result.error === null)
-    .map((result) => result.durationMs);
-  const responseMs = responseCandidates.length
-    ? Math.max(...responseCandidates)
-    : null;
+  const responseMs = blockResult.error ? null : blockResult.durationMs;
 
-  if (chainResult.error) {
-    error = sanitizeError(chainResult.error);
-  }
   if (blockResult.error) {
-    error = error ?? sanitizeError(blockResult.error);
+    error = sanitizeError(blockResult.error);
   }
 
   return {
