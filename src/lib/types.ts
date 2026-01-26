@@ -16,6 +16,7 @@ export type CardData = {
   rpcBuildTimeUtc?: string | null;
   rpcDocsUrl?: string | null;
   explorerUrl?: string | null;
+  explorerApiUrl?: string | null;
   explorerLastBlockHeight?: number | null;
   explorerLastBlockAgeSec?: number | null;
   explorerResponseMs?: number | null;

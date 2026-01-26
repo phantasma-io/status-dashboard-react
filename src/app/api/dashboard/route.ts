@@ -5,7 +5,7 @@ import {
   normalizeNetwork,
   readTimeoutMs,
 } from "@/lib/server/dashboard";
-import { buildBpCard, buildExplorerCard, buildRpcCard, resolveRpcDocsUrl } from "@/lib/server/cards";
+import { buildBpCard, buildExplorerCard, buildRpcCard, resolveExplorerDocsUrl, resolveRpcDocsUrl } from "@/lib/server/cards";
 import type { CardData } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -61,6 +61,7 @@ export async function GET(request: Request) {
         title: entry.title ?? key,
         height: null,
         explorerUrl: entry.url,
+        explorerApiUrl: resolveExplorerDocsUrl(entry.apiUrl),
       })),
     ];
 

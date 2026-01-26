@@ -69,7 +69,8 @@ The dashboard reads a server-side JSON file. The default Docker setup mounts it 
 Notes:
 - BP URLs must already include `/node/<name>/` and a trailing slash.
 - RPC URLs must point to the JSON-RPC endpoint (usually `/rpc`).
-- RPC cards surface a Swagger link by replacing `/rpc` with `/api/v1`.
+- RPC cards surface a Swagger link by removing the trailing `/rpc`.
+- Explorer cards surface links to both the explorer front-end and the explorer API (using `apiUrl` without `/api/v1`).
 - Each network must include `defaultExplorer` matching one of its explorer keys.
 - `role` is optional for hosts. If omitted, it defaults to `Watcher`.
 

@@ -93,9 +93,26 @@ export function resolveRpcDocsUrl(rpcUrl: string): string | null {
     if (parts[parts.length - 1] !== "rpc") {
       return null;
     }
-    parts[parts.length - 1] = "api";
-    parts.push("v1");
-    url.pathname = `/${parts.join("/")}`;
+    parts.pop();
+    url.pathname = `/${parts.join("/")}` || "/";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function resolveExplorerDocsUrl(apiUrl: string): string | null {
+  try {
+    const url = new URL(apiUrl);
+    const trimmed = url.pathname.replace(/\/+$/g, "");
+    const suffix = "/api/v1";
+    if (!trimmed.endsWith(suffix)) {
+      return url.toString();
+    }
+    const nextPath = trimmed.slice(0, -suffix.length) || "/";
+    url.pathname = nextPath;
     url.search = "";
     url.hash = "";
     return url.toString();
@@ -256,6 +273,7 @@ export async function buildExplorerCard({
     title: entry.title ?? nodeKey,
     height,
     explorerUrl: entry.url,
+    explorerApiUrl: resolveExplorerDocsUrl(entry.apiUrl),
     explorerLastBlockHeight: lastBlockHeight,
     explorerLastBlockAgeSec: lastBlockAgeSec,
     explorerResponseMs: responseMs,

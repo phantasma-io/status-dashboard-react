@@ -123,26 +123,47 @@ export function StatusCard({
         ? "RPC height"
         : "Explorer height";
   const deltaTitle = "Delta from max applied height across BP/RPC nodes";
-  const linkUrl =
-    card.kind === "explorer"
-      ? card.explorerUrl
-      : card.kind === "rpc"
-        ? card.rpcDocsUrl
-        : null;
-  const linkLabel = card.kind === "explorer" ? "Open explorer" : "Open RPC API";
+  const explorerLink = card.kind === "explorer" ? card.explorerUrl : null;
+  const explorerApiLink = card.kind === "explorer" ? card.explorerApiUrl : null;
+  const rpcLink = card.kind === "rpc" ? card.rpcDocsUrl : null;
 
   return (
     <div className="flex h-full flex-col gap-4 rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-2">
           <div className="text-sm font-semibold text-foreground">{card.title}</div>
-          {linkUrl ? (
+          {explorerLink ? (
             <a
-              href={linkUrl}
+              href={explorerLink}
               target="_blank"
               rel="noreferrer"
               className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground"
-              aria-label={linkLabel}
+              aria-label="Open explorer"
+              title="Explorer"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          ) : null}
+          {explorerApiLink ? (
+            <a
+              href={explorerApiLink}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground"
+              aria-label="Open explorer API"
+              title="Explorer API"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          ) : null}
+          {rpcLink ? (
+            <a
+              href={rpcLink}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground"
+              aria-label="Open RPC API"
+              title="RPC API"
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
