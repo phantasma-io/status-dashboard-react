@@ -522,19 +522,62 @@ export default function Home() {
       })();
     };
 
+    const primaryJobs: Array<{
+      card: CardData;
+      part?: string;
+      ignoreNulls?: boolean;
+      suppressError?: boolean;
+      onFinally?: () => void;
+    }> = [];
+    const secondaryJobs: Array<{
+      card: CardData;
+      part?: string;
+      ignoreNulls?: boolean;
+      suppressError?: boolean;
+    }> = [];
+
     for (const card of targets) {
       if (card.kind === "bp") {
-        requestAndApply(card, { part: "heights", onFinally: finishPrimary });
-        requestAndApply(card, { part: "status", ignoreNulls: true });
+        primaryJobs.push({ card, part: "heights", onFinally: finishPrimary });
+        secondaryJobs.push({ card, part: "status", ignoreNulls: true });
         continue;
       }
       if (card.kind === "rpc") {
-        requestAndApply(card, { part: "height", onFinally: finishPrimary });
-        requestAndApply(card, { part: "version", ignoreNulls: true });
-        requestAndApply(card, { part: "latency", ignoreNulls: true, suppressError: true });
+        primaryJobs.push({ card, part: "height", onFinally: finishPrimary });
+        secondaryJobs.push({ card, part: "version", ignoreNulls: true });
+        secondaryJobs.push({ card, part: "latency", ignoreNulls: true, suppressError: true });
         continue;
       }
-      requestAndApply(card, { onFinally: finishPrimary });
+      primaryJobs.push({ card, onFinally: finishPrimary });
+    }
+
+    const priorityForKind = (kind: CardData["kind"]) => {
+      if (kind === "rpc") return 0;
+      if (kind === "explorer") return 1;
+      return 2;
+    };
+
+    primaryJobs
+      .sort((a, b) => priorityForKind(a.card.kind) - priorityForKind(b.card.kind))
+      .forEach((job) => {
+        requestAndApply(job.card, {
+          part: job.part,
+          ignoreNulls: job.ignoreNulls,
+          suppressError: job.suppressError,
+          onFinally: job.onFinally,
+        });
+      });
+
+    if (secondaryJobs.length > 0) {
+      setTimeout(() => {
+        for (const job of secondaryJobs) {
+          requestAndApply(job.card, {
+            part: job.part,
+            ignoreNulls: job.ignoreNulls,
+            suppressError: job.suppressError,
+          });
+        }
+      }, 0);
     }
   };
 
