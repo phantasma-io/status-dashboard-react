@@ -21,7 +21,10 @@ const baseConfig = {
         },
       },
       rpcs: {
-        "rpc-a": { title: "RPC A", url: "https://example.com/rpc" },
+        "rpc-a": {
+          title: "RPC A",
+          url: "https://example.com/rpc",
+        },
       },
     },
     testnet: {
@@ -229,5 +232,4 @@ describe("parseDashboardConfig", () => {
       })
     ).toThrowError(/defaultExplorer/);
   });
-
 });

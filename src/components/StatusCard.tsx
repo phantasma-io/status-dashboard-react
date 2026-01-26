@@ -10,7 +10,7 @@ import {
   type DelayTone,
 } from "@/lib/metrics";
 import { Sparkline } from "@/components/Sparkline";
-import { ClipboardCopy, RotateCw } from "lucide-react";
+import { ClipboardCopy, ExternalLink, RotateCw } from "lucide-react";
 
 const toneStyles: Record<ReturnType<typeof getDeltaTone>, string> = {
   neutral: "text-foreground",
@@ -49,8 +49,6 @@ function formatBuildTime(value: string | null | undefined): string {
   const pad = (input: number) => input.toString().padStart(2, "0");
   return `${parsed.getUTCFullYear()}-${pad(parsed.getUTCMonth() + 1)}-${pad(parsed.getUTCDate())} ${pad(parsed.getUTCHours())}:${pad(parsed.getUTCMinutes())} UTC`;
 }
-
-
 
 // BP build strings start with compiler/platform details; show from build date onward.
 function formatBpBuildVersion(value: string | null | undefined): string {
@@ -111,12 +109,44 @@ export function StatusCard({
       ? null
       : card.rpcAverageResponseMs / 1000
   );
+  const explorerAgeTone = getDelayToneSeconds(card.explorerLastBlockAgeSec ?? null);
+  const explorerRespTone = getDelayToneSeconds(
+    card.explorerResponseMs === null || card.explorerResponseMs === undefined
+      ? null
+      : card.explorerResponseMs / 1000
+  );
+
+  const heightTitle =
+    card.kind === "bp"
+      ? "Applied height"
+      : card.kind === "rpc"
+        ? "RPC height"
+        : "Explorer height";
+  const deltaTitle = "Delta from max applied height across BP/RPC nodes";
+  const linkUrl =
+    card.kind === "explorer"
+      ? card.explorerUrl
+      : card.kind === "rpc"
+        ? card.rpcDocsUrl
+        : null;
+  const linkLabel = card.kind === "explorer" ? "Open explorer" : "Open RPC API";
 
   return (
     <div className="flex h-full flex-col gap-4 rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-2">
           <div className="text-sm font-semibold text-foreground">{card.title}</div>
+          {linkUrl ? (
+            <a
+              href={linkUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground"
+              aria-label={linkLabel}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          ) : null}
           <button
             type="button"
             className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
@@ -145,13 +175,13 @@ export function StatusCard({
         <div>
           <div
             className={`text-3xl font-semibold ${toneStyles[tone]}`}
-            title="Applied height"
+            title={heightTitle}
           >
             {formatHeight(card.height)}
           </div>
           <div
             className={`text-sm font-medium ${toneStyles[tone]}`}
-            title="Delta from max applied height across all nodes"
+            title={deltaTitle}
           >
             {formatDelta(delta)}
           </div>
@@ -172,19 +202,13 @@ export function StatusCard({
 
       {card.kind === "bp" && card.heights ? (
         <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground sm:grid-cols-3">
-          <div
-            className="flex flex-col gap-1 leading-tight"
-            title="Applied height"
-          >
+          <div className="flex flex-col gap-1 leading-tight" title="Applied height">
             <div className="uppercase tracking-wide">Ap</div>
             <div className="font-mono text-foreground/80">
               {formatHeight(card.heights.applied)}
             </div>
           </div>
-          <div
-            className="flex flex-col gap-1 leading-tight"
-            title="Committed height"
-          >
+          <div className="flex flex-col gap-1 leading-tight" title="Committed height">
             <div className="uppercase tracking-wide">Com</div>
             <div className="font-mono text-foreground/80">
               {formatHeight(card.heights.committed)}
@@ -256,7 +280,10 @@ export function StatusCard({
               </span>
             </span>
             <span>
-              Tx/block: <span className="text-foreground/80">{card.avgTransactions?.toFixed(1) ?? "—"}</span>
+              Tx/block:{" "}
+              <span className="text-foreground/80">
+                {card.avgTransactions?.toFixed(1) ?? "—"}
+              </span>
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -265,6 +292,27 @@ export function StatusCard({
               {formatBpBuildVersion(card.bpBuildVersion)}
             </span>
           </div>
+        </div>
+      ) : card.kind === "explorer" ? (
+        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+          <span title="Latest block height from explorer">
+            Last block:{" "}
+            <span className="text-foreground/80">
+              {formatHeight(card.explorerLastBlockHeight ?? null)}
+            </span>
+          </span>
+          <span title="Age since the latest explorer block timestamp (UTC)">
+            Block age:{" "}
+            <span className={delayToneStyles[explorerAgeTone]}>
+              {formatSeconds(card.explorerLastBlockAgeSec ?? null)}
+            </span>
+          </span>
+          <span title="Explorer API response time">
+            API resp:{" "}
+            <span className={delayToneStyles[explorerRespTone]}>
+              {formatMilliseconds(card.explorerResponseMs ?? null)}
+            </span>
+          </span>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">

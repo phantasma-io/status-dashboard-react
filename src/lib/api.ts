@@ -51,6 +51,11 @@ export type RpcBuildInfo = {
   buildTimeUtc: string | null;
 };
 
+export type ExplorerLatestBlock = {
+  height: number | null;
+  dateSec: number | null;
+};
+
 
 const DEFAULT_TIMEOUT_MS = 15000;
 // Retry transient network failures to reduce flaky dashboard status updates.
@@ -400,4 +405,59 @@ export async function fetchTokenSupply(
     throw new Error("Explorer response missing supply");
   }
   return supply;
+}
+
+export async function fetchExplorerChainHeight(
+  apiBase: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<number> {
+  const query = new URLSearchParams({
+    chain: "main",
+    limit: "1",
+    offset: "0",
+    with_total: "0",
+  });
+
+  const payload = await fetchJson(`${apiBase}/chains?${query.toString()}`, timeoutMs);
+  if (!isRecord(payload)) {
+    throw new Error("Explorer response must be an object");
+  }
+  const chains = readArray(payload.chains);
+  if (!chains || chains.length === 0 || !isRecord(chains[0])) {
+    throw new Error("Explorer response missing chains");
+  }
+  const height = readNumber(chains[0].chain_height);
+  if (height === null) {
+    throw new Error("Explorer response missing chain height");
+  }
+  return height;
+}
+
+export async function fetchExplorerLatestBlock(
+  apiBase: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<ExplorerLatestBlock> {
+  const query = new URLSearchParams({
+    order_by: "id",
+    order_direction: "desc",
+    limit: "1",
+    offset: "0",
+    chain: "main",
+    with_total: "0",
+  });
+
+  const payload = await fetchJson(`${apiBase}/blocks?${query.toString()}`, timeoutMs);
+  if (!isRecord(payload)) {
+    throw new Error("Explorer response must be an object");
+  }
+  const blocks = readArray(payload.blocks);
+  if (!blocks || blocks.length === 0 || !isRecord(blocks[0])) {
+    throw new Error("Explorer response missing blocks");
+  }
+  const height = readNumber(blocks[0].height);
+  const dateSec = readNumber(blocks[0].date);
+  if (height === null && dateSec === null) {
+    throw new Error("Explorer response missing block data");
+  }
+  return { height, dateSec };
 }

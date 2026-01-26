@@ -33,11 +33,13 @@ export type DashboardConfig = {
 
 export const NETWORKS: NetworkKey[] = ["mainnet", "testnet", "devnet"];
 
+type ParsedEntry = { title: string; url: string; role?: string };
+
 function parseEntries(
   value: unknown,
   label: string,
   includeRole: boolean
-): Record<string, { title: string; url: string; role?: string }> {
+): Record<string, ParsedEntry> {
   // Config is user-provided; validate strictly so we fail fast on malformed entries.
   if (value === undefined || value === null) {
     return {};
@@ -46,7 +48,7 @@ function parseEntries(
     throw new Error(`${label} must be an object`);
   }
 
-  const result: Record<string, { title: string; url: string; role?: string }> = {};
+  const result: Record<string, ParsedEntry> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (!isRecord(entry)) {
       throw new Error(`${label} entry "${key}" must be an object`);
@@ -57,6 +59,7 @@ function parseEntries(
       throw new Error(`${label} entry "${key}" must include title and url`);
     }
     const role = includeRole ? readString(entry.role) ?? "Watcher" : undefined;
+
     result[key] = includeRole ? { title, url, role } : { title, url };
   }
   return result;

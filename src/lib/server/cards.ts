@@ -1,6 +1,18 @@
-import type { BlockHeights, RpcBuildInfo, StatusSummary } from "@/lib/api";
-import { fetchBlockHeights, fetchRpcHeight, fetchRpcVersion, fetchStatusSummary } from "@/lib/api";
-import type { HostEntry, RpcEntry } from "@/lib/config";
+import type {
+  BlockHeights,
+  ExplorerLatestBlock,
+  RpcBuildInfo,
+  StatusSummary,
+} from "@/lib/api";
+import {
+  fetchBlockHeights,
+  fetchExplorerChainHeight,
+  fetchExplorerLatestBlock,
+  fetchRpcHeight,
+  fetchRpcVersion,
+  fetchStatusSummary,
+} from "@/lib/api";
+import type { ExplorerEntry, HostEntry, RpcEntry } from "@/lib/config";
 import type { CardData } from "@/lib/types";
 import { sanitizeError } from "@/lib/server/dashboard";
 
@@ -51,11 +63,46 @@ type RpcCardOptions = {
   timeoutMs: number;
 };
 
+type ExplorerCardOptions = {
+  id: string;
+  nodeKey: string;
+  entry: ExplorerEntry;
+  timeoutMs: number;
+};
+
 type RpcVersionSample = {
   durationMs: number;
   info: RpcBuildInfo | null;
   error: unknown | null;
 };
+
+type TimedResult<T> = {
+  durationMs: number;
+  value: T | null;
+  error: unknown | null;
+};
+
+export function resolveRpcDocsUrl(rpcUrl: string): string | null {
+  try {
+    const url = new URL(rpcUrl);
+    const trimmed = url.pathname.replace(/\/+$/g, "");
+    const parts = trimmed.split("/").filter(Boolean);
+    if (parts.length === 0) {
+      return null;
+    }
+    if (parts[parts.length - 1] !== "rpc") {
+      return null;
+    }
+    parts[parts.length - 1] = "api";
+    parts.push("v1");
+    url.pathname = `/${parts.join("/")}`;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
 
 // Use GetVersion for latency sampling to avoid extra chain-state work on RPC nodes.
 async function sampleRpcVersion(
@@ -68,6 +115,16 @@ async function sampleRpcVersion(
     return { durationMs: Date.now() - start, info, error: null };
   } catch (error) {
     return { durationMs: Date.now() - start, info: null, error };
+  }
+}
+
+async function runTimed<T>(action: () => Promise<T>): Promise<TimedResult<T>> {
+  const start = Date.now();
+  try {
+    const value = await action();
+    return { durationMs: Date.now() - start, value, error: null };
+  } catch (error) {
+    return { durationMs: Date.now() - start, value: null, error };
   }
 }
 
@@ -160,6 +217,57 @@ export async function buildRpcCard({
     rpcVersion: versionInfo?.version ?? null,
     rpcCommit: versionInfo?.commit ?? null,
     rpcBuildTimeUtc: versionInfo?.buildTimeUtc ?? null,
+    rpcDocsUrl: resolveRpcDocsUrl(entry.url),
     error: heightError ?? versionError,
+  };
+}
+
+export async function buildExplorerCard({
+  id,
+  nodeKey,
+  entry,
+  timeoutMs,
+}: ExplorerCardOptions): Promise<CardData> {
+  let error: string | null = null;
+
+  const [chainResult, blockResult] = await Promise.all([
+    runTimed(() => fetchExplorerChainHeight(entry.apiUrl, timeoutMs)),
+    runTimed(() => fetchExplorerLatestBlock(entry.apiUrl, timeoutMs)),
+  ]);
+
+  const chainHeight = chainResult.value;
+  const blockInfo: ExplorerLatestBlock | null = blockResult.value;
+  const height = chainHeight ?? blockInfo?.height ?? null;
+  const lastBlockHeight = blockInfo?.height ?? null;
+  const lastBlockAgeSec =
+    blockInfo?.dateSec === null || blockInfo?.dateSec === undefined
+      ? null
+      : Math.max(0, Date.now() / 1000 - blockInfo.dateSec);
+
+  const responseCandidates = [chainResult, blockResult]
+    .filter((result) => result.error === null)
+    .map((result) => result.durationMs);
+  const responseMs = responseCandidates.length
+    ? Math.max(...responseCandidates)
+    : null;
+
+  if (chainResult.error) {
+    error = sanitizeError(chainResult.error);
+  }
+  if (blockResult.error) {
+    error = error ?? sanitizeError(blockResult.error);
+  }
+
+  return {
+    id,
+    nodeKey,
+    kind: "explorer",
+    title: entry.title ?? nodeKey,
+    height,
+    explorerUrl: entry.url,
+    explorerLastBlockHeight: lastBlockHeight,
+    explorerLastBlockAgeSec: lastBlockAgeSec,
+    explorerResponseMs: responseMs,
+    error,
   };
 }

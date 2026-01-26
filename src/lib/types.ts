@@ -1,6 +1,6 @@
 import type { BlockHeights, StatusSummary } from "@/lib/api";
 
-export type CardKind = "bp" | "rpc";
+export type CardKind = "bp" | "rpc" | "explorer";
 
 export type CardData = {
   id: string;
@@ -14,6 +14,11 @@ export type CardData = {
   bpBuildVersion?: string | null;
   rpcCommit?: string | null;
   rpcBuildTimeUtc?: string | null;
+  rpcDocsUrl?: string | null;
+  explorerUrl?: string | null;
+  explorerLastBlockHeight?: number | null;
+  explorerLastBlockAgeSec?: number | null;
+  explorerResponseMs?: number | null;
   heights?: BlockHeights | null;
   status?: StatusSummary | null;
   leader?: string | null;

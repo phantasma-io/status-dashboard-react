@@ -3,36 +3,36 @@
   "networks": {
     "mainnet": {
       "explorers": {
-        "explorer": {
+        "Explorer": {
           "url": "https://explorer.phantasma.info",
           "apiUrl": "https://api-explorer.phantasma.info/api/v1"
         }
       },
       "hosts": {},
       "rpcs": {},
-      "defaultExplorer": "explorer"
+      "defaultExplorer": "Explorer"
     },
     "testnet": {
       "explorers": {
-        "explorer": {
+        "Explorer": {
           "url": "https://testnet-explorer.phantasma.info",
           "apiUrl": "https://api-testnet-explorer.phantasma.info/api/v1"
         }
       },
       "hosts": {},
       "rpcs": {},
-      "defaultExplorer": "explorer"
+      "defaultExplorer": "Explorer"
     },
     "devnet": {
       "explorers": {
-        "explorer": {
+        "Explorer": {
           "url": "https://devnet-explorer.phantasma.info",
           "apiUrl": "https://api-devnet-explorer.phantasma.info/api/v1"
         }
       },
       "hosts": {},
       "rpcs": {},
-      "defaultExplorer": "explorer"
+      "defaultExplorer": "Explorer"
     }
   }
 }

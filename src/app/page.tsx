@@ -17,7 +17,7 @@ const networkLabels: Record<NetworkKey, string> = {
 type DashboardResponse = {
   network: NetworkKey;
   defaultNetwork: NetworkKey;
-  counts: { hosts: number; rpcs: number };
+  counts: { hosts: number; rpcs: number; explorers: number };
   cards: CardData[];
   maxHeight: number | null;
   supply?: { soul: string | null; kcal: string | null; error?: string };
@@ -37,13 +37,13 @@ type SupplyState = {
 
 type DashboardState = {
   cards: CardData[];
-  counts: { hosts: number; rpcs: number };
+  counts: { hosts: number; rpcs: number; explorers: number };
   maxHeight: number | null;
 };
 
 const emptyState: DashboardState = {
   cards: [],
-  counts: { hosts: 0, rpcs: 0 },
+  counts: { hosts: 0, rpcs: 0, explorers: 0 },
   maxHeight: null,
 };
 
@@ -108,7 +108,7 @@ async function requestSupply(network: NetworkKey): Promise<SupplyResponse> {
 function toDashboardState(data: DashboardResponse): DashboardState {
   return {
     cards: data.cards ?? [],
-    counts: data.counts ?? { hosts: 0, rpcs: 0 },
+    counts: data.counts ?? { hosts: 0, rpcs: 0, explorers: 0 },
     maxHeight: typeof data.maxHeight === "number" ? data.maxHeight : null,
   };
 }
@@ -381,7 +381,7 @@ export default function Home() {
 
   const placeholderCount = Math.max(
     6,
-    dashboard.counts.hosts + dashboard.counts.rpcs,
+    dashboard.counts.hosts + dashboard.counts.rpcs + dashboard.counts.explorers,
     dashboard.cards.length || 0
   );
 
@@ -414,6 +414,7 @@ export default function Home() {
         : item
     );
     const heights = cards
+      .filter((item) => item.kind !== "explorer")
       .map((item) => item.height)
       .filter((height): height is number => height !== null);
     const maxHeight = heights.length ? Math.max(...heights) : null;
@@ -623,6 +624,7 @@ export default function Home() {
                 <div>Network: {networkLabels[selectedNetwork]}</div>
                 <div>Hosts: {dashboard.counts.hosts}</div>
                 <div>RPCs: {dashboard.counts.rpcs}</div>
+                <div>Explorers: {dashboard.counts.explorers}</div>
               </div>
             </div>
           </section>
@@ -663,7 +665,7 @@ export default function Home() {
                 </div>
               ))
             : null}
-          {cardsStatus !== "loading" && dashboard.counts.hosts + dashboard.counts.rpcs === 0 ? (
+          {cardsStatus !== "loading" && dashboard.counts.hosts + dashboard.counts.rpcs + dashboard.counts.explorers === 0 ? (
             <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
               No nodes configured for {networkLabels[selectedNetwork]}. Update the server config file.
             </div>

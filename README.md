@@ -1,6 +1,6 @@
 # Phantasma Network Dashboard (React)
 
-Single-screen dashboard for BP and RPC health checks across mainnet/testnet/devnet.
+Single-screen dashboard for BP, RPC, and explorer health checks across mainnet/testnet/devnet.
 
 ## Quick start (local dev)
 
@@ -69,6 +69,7 @@ The dashboard reads a server-side JSON file. The default Docker setup mounts it 
 Notes:
 - BP URLs must already include `/node/<name>/` and a trailing slash.
 - RPC URLs must point to the JSON-RPC endpoint (usually `/rpc`).
+- RPC cards surface a Swagger link by replacing `/rpc` with `/api/v1`.
 - Each network must include `defaultExplorer` matching one of its explorer keys.
 - `role` is optional for hosts. If omitted, it defaults to `Watcher`.
 

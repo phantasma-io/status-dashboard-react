@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildBpCard, buildRpcCard } from "@/lib/server/cards";
+import { buildBpCard, buildExplorerCard, buildRpcCard } from "@/lib/server/cards";
 import {
   loadDashboardConfig,
   normalizeNetwork,
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const kind = url.searchParams.get("kind");
   const key = url.searchParams.get("key");
 
-  if (!key || (kind !== "bp" && kind !== "rpc")) {
+  if (!key || (kind !== "bp" && kind !== "rpc" && kind !== "explorer")) {
     return NextResponse.json({ error: "Invalid node selection" }, { status: 400 });
   }
 
@@ -38,12 +38,26 @@ export async function GET(request: Request) {
       return NextResponse.json({ network, card });
     }
 
-    const entry = config.networks[network].rpcs[key];
-    if (!entry) {
-      return NextResponse.json({ error: "Unknown RPC" }, { status: 404 });
+    if (kind === "rpc") {
+      const entry = config.networks[network].rpcs[key];
+      if (!entry) {
+        return NextResponse.json({ error: "Unknown RPC" }, { status: 404 });
+      }
+      const card = await buildRpcCard({
+        id: `rpc-${key}`,
+        nodeKey: key,
+        entry,
+        timeoutMs,
+      });
+      return NextResponse.json({ network, card });
     }
-    const card = await buildRpcCard({
-      id: `rpc-${key}`,
+
+    const entry = config.networks[network].explorers[key];
+    if (!entry) {
+      return NextResponse.json({ error: "Unknown explorer" }, { status: 404 });
+    }
+    const card = await buildExplorerCard({
+      id: `explorer-${key}`,
       nodeKey: key,
       entry,
       timeoutMs,
