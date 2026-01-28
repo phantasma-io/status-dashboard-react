@@ -16,6 +16,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Phantasma Network Dashboard",
   description: "Block producer and RPC status overview",
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
+    ],
+  },
 };
 
 export default function RootLayout({
