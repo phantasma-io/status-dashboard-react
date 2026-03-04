@@ -4,6 +4,7 @@ import {
   buildBpHeightsCard,
   buildBpStatusCard,
   buildExplorerCard,
+  buildPavillionCard,
   buildRpcCard,
   buildRpcHeightCard,
   buildRpcLatencyCard,
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
   const latency = url.searchParams.get("latency") === "1";
   const part = url.searchParams.get("part");
 
-  if (!key || (kind !== "bp" && kind !== "rpc" && kind !== "explorer")) {
+  if (!key || (kind !== "bp" && kind !== "rpc" && kind !== "explorer" && kind !== "pavillion")) {
     return NextResponse.json({ error: "Invalid node selection" }, { status: 400 });
   }
 
@@ -109,12 +110,29 @@ export async function GET(request: Request) {
       return NextResponse.json({ network, card });
     }
 
-    const entry = config.networks[network].explorers[key];
-    if (!entry) {
-      return NextResponse.json({ error: "Unknown explorer" }, { status: 404 });
+    if (kind === "explorer") {
+      const entry = config.networks[network].explorers[key];
+      if (!entry) {
+        return NextResponse.json({ error: "Unknown explorer" }, { status: 404 });
+      }
+      const card = await buildExplorerCard({
+        id: `explorer-${key}`,
+        nodeKey: key,
+        entry,
+        timeoutMs,
+      });
+      return NextResponse.json({ network, card });
     }
-    const card = await buildExplorerCard({
-      id: `explorer-${key}`,
+
+    const entry = config.networks[network].pavillions[key];
+    if (!entry) {
+      return NextResponse.json({ error: "Unknown pavillion" }, { status: 404 });
+    }
+    if (part) {
+      return NextResponse.json({ error: "Unsupported part" }, { status: 400 });
+    }
+    const card = await buildPavillionCard({
+      id: `pavillion-${key}`,
       nodeKey: key,
       entry,
       timeoutMs,

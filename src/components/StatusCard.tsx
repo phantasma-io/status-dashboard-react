@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { CardData } from "@/lib/types";
 import {
   computeDelta,
@@ -10,7 +11,7 @@ import {
   type DelayTone,
 } from "@/lib/metrics";
 import { Sparkline } from "@/components/Sparkline";
-import { ClipboardCopy, ExternalLink, RotateCw } from "lucide-react";
+import { ChevronDown, ChevronUp, ClipboardCopy, ExternalLink, RotateCw } from "lucide-react";
 
 const toneStyles: Record<ReturnType<typeof getDeltaTone>, string> = {
   neutral: "text-foreground",
@@ -29,6 +30,18 @@ const roleToneStyles: Record<"watcher" | "validator" | "neutral", string> = {
   watcher: "text-amber-700 dark:text-amber-300 border-amber-400/50",
   validator: "text-emerald-700 dark:text-emerald-300 border-emerald-400/50",
   neutral: "text-muted-foreground",
+};
+
+const pavStatusStyles: Record<"ok" | "degraded" | "unknown", string> = {
+  ok: "text-emerald-600 dark:text-emerald-400",
+  degraded: "text-red-600 dark:text-red-400",
+  unknown: "text-muted-foreground",
+};
+
+const probeStyles: Record<"ok" | "fail" | "unknown", string> = {
+  ok: "text-emerald-600 dark:text-emerald-400",
+  fail: "text-red-600 dark:text-red-400",
+  unknown: "text-muted-foreground",
 };
 
 function truncateMiddle(value: string, head = 8, tail = 8): string {
@@ -60,6 +73,33 @@ function formatBpBuildVersion(value: string | null | undefined): string {
     return value;
   }
   return value.slice(match.index).trim();
+}
+
+function formatUptimeDetailed(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  const total = Math.max(0, Math.floor(value));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
+function formatProbeState(ok: boolean | null | undefined): { label: string; tone: "ok" | "fail" | "unknown" } {
+  if (ok === true) {
+    return { label: "ok", tone: "ok" };
+  }
+  if (ok === false) {
+    return { label: "fail", tone: "fail" };
+  }
+  return { label: "unknown", tone: "unknown" };
 }
 
 function resolveRoleTone(value: string | null | undefined) {
@@ -135,14 +175,23 @@ export function StatusCard({
       ? null
       : card.explorerResponseMs / 1000
   );
+  const pavStatusAgeTone = getDelayToneSeconds(card.pavStatusAgeSec ?? null);
+  const pavState = card.pavOverallOk === true ? "ok" : card.pavOverallOk === false ? "degraded" : "unknown";
+  const pavStatusLabel =
+    pavState === "ok" ? "Healthy" : pavState === "degraded" ? "Degraded" : "Unknown";
 
   const heightTitle =
     card.kind === "bp"
       ? "Applied height"
       : card.kind === "rpc"
         ? "RPC height"
-        : "Explorer height";
-  const deltaTitle = "Delta from max applied height across BP/RPC nodes";
+        : card.kind === "explorer"
+          ? "Explorer height"
+          : "Pavillion service status";
+  const deltaTitle =
+    card.kind === "pavillion"
+      ? "Aggregated Pavillion health across client/server/shop endpoints"
+      : "Delta from max applied height across BP/RPC nodes";
   const explorerLink = card.kind === "explorer" ? card.explorerUrl : null;
   const explorerApiLink = card.kind === "explorer" ? card.explorerApiUrl : null;
   const explorerBlockLink =
@@ -150,6 +199,22 @@ export function StatusCard({
       ? resolveExplorerBlockUrl(card.explorerUrl, card.explorerLastBlockHeight)
       : null;
   const rpcLink = card.kind === "rpc" ? card.rpcDocsUrl : null;
+  const pavClientLink = card.kind === "pavillion" ? card.pavClientUrl : null;
+  const pavApiProbe = formatProbeState(card.pavApiProbeOk ?? null);
+  const pavStatusProbe = formatProbeState(card.pavStatusProbeOk ?? null);
+  const pavStatusCheck =
+    card.pavStatusOk === true
+      ? { label: "ok", tone: "ok" as const }
+      : card.pavStatusOk === false
+        ? { label: "degraded", tone: "fail" as const }
+        : { label: "unknown", tone: "unknown" as const };
+  const pavRpcProbe = formatProbeState(card.pavRpcProbeOk ?? null);
+  const pavClientProbe = formatProbeState(card.pavClientProbeOk ?? null);
+  const pavShopProbe =
+    card.pavShopUrl === null || card.pavShopUrl === undefined
+      ? { label: "not set", tone: "unknown" as const }
+      : formatProbeState(card.pavShopProbeOk ?? null);
+  const [pavDetailsOpen, setPavDetailsOpen] = useState(false);
 
   return (
     <div className="flex h-full flex-col gap-4 rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
@@ -192,6 +257,18 @@ export function StatusCard({
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
           ) : null}
+          {pavClientLink ? (
+            <a
+              href={pavClientLink}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground"
+              aria-label="Open Pavillion client"
+              title="Pavillion Client"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          ) : null}
           <button
             type="button"
             className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
@@ -217,34 +294,51 @@ export function StatusCard({
       </div>
 
       <div className="flex items-end justify-between gap-4">
-        <div>
-          <div
-            className={`text-3xl font-semibold ${toneStyles[tone]}`}
-            title={heightTitle}
-          >
-            <span className="inline-flex items-center gap-2">
-              <span>{formatHeight(card.height)}</span>
-              {explorerBlockLink ? (
-                <a
-                  href={explorerBlockLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-md border border-border bg-card p-1 text-muted-foreground hover:text-foreground"
-                  aria-label="Open explorer block"
-                  title="Open block"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              ) : null}
-            </span>
+        {card.kind === "pavillion" ? (
+          <div>
+            <div
+              className={`text-3xl font-semibold ${pavStatusStyles[pavState]}`}
+              title={heightTitle}
+            >
+              {pavStatusLabel}
+            </div>
+            <div
+              className={`text-sm font-medium ${delayToneStyles[pavStatusAgeTone]}`}
+              title={deltaTitle}
+            >
+              Status age: {formatSeconds(card.pavStatusAgeSec ?? null)}
+            </div>
           </div>
-          <div
-            className={`text-sm font-medium ${toneStyles[tone]}`}
-            title={deltaTitle}
-          >
-            {formatDelta(delta)}
+        ) : (
+          <div>
+            <div
+              className={`text-3xl font-semibold ${toneStyles[tone]}`}
+              title={heightTitle}
+            >
+              <span className="inline-flex items-center gap-2">
+                <span>{formatHeight(card.height)}</span>
+                {explorerBlockLink ? (
+                  <a
+                    href={explorerBlockLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-md border border-border bg-card p-1 text-muted-foreground hover:text-foreground"
+                    aria-label="Open explorer block"
+                    title="Open block"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : null}
+              </span>
+            </div>
+            <div
+              className={`text-sm font-medium ${toneStyles[tone]}`}
+              title={deltaTitle}
+            >
+              {formatDelta(delta)}
+            </div>
           </div>
-        </div>
+        )}
         {card.sparkline && card.sparkline.length > 1 ? (
           <Sparkline
             series={card.sparkline}
@@ -372,6 +466,128 @@ export function StatusCard({
               {formatMilliseconds(card.explorerResponseMs ?? null)}
             </span>
           </span>
+        </div>
+      ) : card.kind === "pavillion" ? (
+        <div className="grid gap-3 text-xs text-muted-foreground">
+          <div className="grid grid-cols-2 gap-2">
+            <span>
+              API probe:{" "}
+              <span className={probeStyles[pavApiProbe.tone]}>{pavApiProbe.label}</span>
+            </span>
+            <span title={card.pavStatusError ?? undefined}>
+              Status probe:{" "}
+              <span className={probeStyles[pavStatusProbe.tone]}>{pavStatusProbe.label}</span>
+            </span>
+            <span title={card.pavStatusError ?? undefined}>
+              Status check:{" "}
+              <span className={probeStyles[pavStatusCheck.tone]}>{pavStatusCheck.label}</span>
+            </span>
+            <span title={card.pavRpcError ?? undefined}>
+              RPC probe:{" "}
+              <span className={probeStyles[pavRpcProbe.tone]}>{pavRpcProbe.label}</span>
+            </span>
+            <span title={card.pavClientError ?? undefined}>
+              Client probe:{" "}
+              <span className={probeStyles[pavClientProbe.tone]}>{pavClientProbe.label}</span>
+            </span>
+            <span title={card.pavShopError ?? undefined}>
+              Shop probe:{" "}
+              <span className={probeStyles[pavShopProbe.tone]}>{pavShopProbe.label}</span>
+            </span>
+          </div>
+          <div>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+              onClick={() => setPavDetailsOpen((prev) => !prev)}
+              aria-expanded={pavDetailsOpen}
+            >
+              Details
+              {pavDetailsOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+          </div>
+          {pavDetailsOpen ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <span>
+                  Network:{" "}
+                  <span className="text-foreground/80">
+                    {card.pavNetwork ? card.pavNetwork.toUpperCase() : "—"}
+                  </span>
+                </span>
+                <span>
+                  Secure nodes:{" "}
+                  <span className="text-foreground/80">
+                    {card.pavSecureNodes ?? "—"}
+                  </span>
+                </span>
+                <span title={card.pavRpcPrimary ?? undefined}>
+                  RPC peers:{" "}
+                  <span className="text-foreground/80">
+                    {card.pavRpcPeerCount ?? "—"}
+                  </span>
+                </span>
+                <span>
+                  Outages:{" "}
+                  <span className="text-foreground/80">
+                    {card.pavOutagesCount ?? "—"}
+                  </span>
+                </span>
+                <span className="col-span-2" title={card.pavRpcPrimary ?? undefined}>
+                  RPC primary:{" "}
+                  <span className="font-mono text-foreground/80">
+                    {card.pavRpcPrimary ? truncateMiddle(card.pavRpcPrimary, 14, 14) : "—"}
+                  </span>
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <span>
+                  API uptime:{" "}
+                  <span className="text-foreground/80">
+                    {formatUptimeDetailed(card.pavApiUptimeSec ?? null)}
+                  </span>
+                </span>
+                <span title={card.pavApiBuildTime ?? undefined}>
+                  API build:{" "}
+                  <span className="text-foreground/80">
+                    {formatBuildTime(card.pavApiBuildTime)}
+                  </span>
+                </span>
+                <span className="col-span-2" title={card.pavApiBuildCommit ?? undefined}>
+                  API commit:{" "}
+                  <span className="font-mono text-foreground/80">
+                    {card.pavApiBuildCommit ? truncateMiddle(card.pavApiBuildCommit) : "—"}
+                  </span>
+                </span>
+                <span>
+                  Client SDK:{" "}
+                  <span className="text-foreground/80">
+                    {card.pavClientSdkVersion ?? "—"}
+                  </span>
+                </span>
+                <span title={card.pavClientBuildTime ?? undefined}>
+                  Client build:{" "}
+                  <span className="text-foreground/80">
+                    {formatBuildTime(card.pavClientBuildTime)}
+                  </span>
+                </span>
+                <span title={card.pavClientBuildBranch ?? undefined}>
+                  Branch:{" "}
+                  <span className="text-foreground/80">
+                    {card.pavClientBuildBranch ?? "—"}
+                  </span>
+                </span>
+                <span className="col-span-2">
+                  Shop uptime:{" "}
+                  <span className="font-mono text-foreground/80">
+                    {card.pavShopUrl
+                      ? formatUptimeDetailed(card.pavShopUptimeSec ?? null)
+                      : "not configured"}
+                  </span>
+                </span>
+              </div>
+            </>
+          ) : null}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">

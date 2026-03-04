@@ -26,6 +26,15 @@ const baseConfig = {
           url: "https://example.com/rpc",
         },
       },
+      pavillions: {
+        "pav-hub": {
+          title: "Pavillion Hub",
+          clientUrl: "https://pavillion.example.org",
+          apiUrl: "https://pavillion.example.org/api",
+          shopUrl: "http://127.0.0.1:22222",
+          expectedNetwork: "mainnet",
+        },
+      },
     },
     testnet: {
       defaultExplorer: "phantasma",
@@ -37,6 +46,7 @@ const baseConfig = {
       },
       hosts: {},
       rpcs: {},
+      pavillions: {},
     },
     devnet: {
       defaultExplorer: "phantasma",
@@ -48,6 +58,7 @@ const baseConfig = {
       },
       hosts: {},
       rpcs: {},
+      pavillions: {},
     },
   },
 };
@@ -60,6 +71,9 @@ describe("parseDashboardConfig", () => {
     expect(config.networks.mainnet.hosts["main-a"].title).toBe("Mainnet A");
     expect(config.networks.mainnet.hosts["main-a"].role).toBe("Validator");
     expect(config.networks.mainnet.rpcs["rpc-a"].url).toBe("https://example.com/rpc");
+    expect(config.networks.mainnet.pavillions["pav-hub"].apiUrl).toBe(
+      "https://pavillion.example.org/api"
+    );
   });
 
   it("defaults host role to Watcher when missing", () => {
@@ -231,5 +245,56 @@ describe("parseDashboardConfig", () => {
         },
       })
     ).toThrowError(/defaultExplorer/);
+  });
+
+  it("rejects malformed pavillion entries", () => {
+    expect(() =>
+      parseDashboardConfig({
+        defaultNetwork: "mainnet",
+        networks: {
+          mainnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://explorer.example.org",
+                apiUrl: "https://api.example.org/api/v1",
+              },
+            },
+            hosts: {},
+            rpcs: {},
+            pavillions: {
+              broken: {
+                title: "Broken Pavillion",
+                clientUrl: "https://broken.example.org",
+              },
+            },
+          },
+          testnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://testnet-explorer.example.org",
+                apiUrl: "https://api-testnet.example.org/api/v1",
+              },
+            },
+            hosts: {},
+            rpcs: {},
+            pavillions: {},
+          },
+          devnet: {
+            defaultExplorer: "phantasma",
+            explorers: {
+              phantasma: {
+                url: "https://devnet-explorer.example.org",
+                apiUrl: "https://api-devnet.example.org/api/v1",
+              },
+            },
+            hosts: {},
+            rpcs: {},
+            pavillions: {},
+          },
+        },
+      })
+    ).toThrowError(/pavillions/);
   });
 });

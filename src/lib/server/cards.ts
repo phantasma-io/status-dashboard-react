@@ -1,17 +1,29 @@
 import type {
   BlockHeights,
   ExplorerLatestBlock,
+  PavillionApiHealth,
+  PavillionClientBuild,
+  PavillionClientConfig,
+  PavillionRpcPeer,
+  PavillionShopHealth,
+  PavillionStatus,
   RpcBuildInfo,
   StatusSummary,
 } from "@/lib/api";
 import {
   fetchBlockHeights,
   fetchExplorerLatestBlock,
+  fetchPavillionApiHealth,
+  fetchPavillionClientBuild,
+  fetchPavillionClientConfig,
+  fetchPavillionRpcPeers,
+  fetchPavillionShopHealth,
+  fetchPavillionStatus,
   fetchRpcHeight,
   fetchRpcVersion,
   fetchStatusSummary,
 } from "@/lib/api";
-import type { ExplorerEntry, HostEntry, RpcEntry } from "@/lib/config";
+import type { ExplorerEntry, HostEntry, PavillionEntry, RpcEntry } from "@/lib/config";
 import type { CardData } from "@/lib/types";
 import { sanitizeError } from "@/lib/server/dashboard";
 
@@ -67,6 +79,13 @@ type ExplorerCardOptions = {
   id: string;
   nodeKey: string;
   entry: ExplorerEntry;
+  timeoutMs: number;
+};
+
+type PavillionCardOptions = {
+  id: string;
+  nodeKey: string;
+  entry: PavillionEntry;
   timeoutMs: number;
 };
 
@@ -159,6 +178,48 @@ async function runTimed<T>(action: () => Promise<T>): Promise<TimedResult<T>> {
   } catch (error) {
     return { durationMs: Date.now() - start, value: null, error };
   }
+}
+
+function inferNetworkFromText(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase();
+  if (normalized.includes("testnet")) {
+    return "testnet";
+  }
+  if (normalized.includes("devnet")) {
+    return "devnet";
+  }
+  if (normalized.includes("mainnet")) {
+    return "mainnet";
+  }
+  if (normalized.includes("api.phantasma.info") || normalized.includes("explorer.phantasma.info")) {
+    return "mainnet";
+  }
+  return null;
+}
+
+function inferPavillionNetwork(options: {
+  expectedNetwork?: string;
+  rpcPeers: PavillionRpcPeer[] | null;
+  clientConfig: PavillionClientConfig | null;
+}): string | null {
+  const expected = inferNetworkFromText(options.expectedNetwork ?? null);
+  if (expected) {
+    return expected;
+  }
+  const fromConfig = inferNetworkFromText(options.clientConfig?.api ?? null);
+  if (fromConfig) {
+    return fromConfig;
+  }
+  for (const peer of options.rpcPeers ?? []) {
+    const fromPeer = inferNetworkFromText(peer.url);
+    if (fromPeer) {
+      return fromPeer;
+    }
+  }
+  return null;
 }
 
 export async function buildBpHeightsCard({
@@ -452,6 +513,121 @@ export async function buildExplorerCard({
     explorerLastBlockHeight: lastBlockHeight,
     explorerLastBlockAgeSec: lastBlockAgeSec,
     explorerResponseMs: responseMs,
+    error,
+  };
+}
+
+export async function buildPavillionCard({
+  id,
+  nodeKey,
+  entry,
+  timeoutMs,
+}: PavillionCardOptions): Promise<CardData> {
+  const [
+    apiHealthResult,
+    statusResult,
+    rpcPeersResult,
+    clientBuildResult,
+    clientConfigResult,
+    shopHealthResult,
+  ] = await Promise.all([
+    runTimed(() => fetchPavillionApiHealth(entry.apiUrl, timeoutMs)),
+    runTimed(() => fetchPavillionStatus(entry.apiUrl, timeoutMs)),
+    runTimed(() => fetchPavillionRpcPeers(entry.apiUrl, timeoutMs)),
+    runTimed(() => fetchPavillionClientBuild(entry.clientUrl, timeoutMs)),
+    runTimed(() => fetchPavillionClientConfig(entry.clientUrl, timeoutMs)),
+    entry.shopUrl
+      ? runTimed(() => fetchPavillionShopHealth(entry.shopUrl as string, timeoutMs))
+      : Promise.resolve<TimedResult<PavillionShopHealth>>({
+          durationMs: 0,
+          value: null,
+          error: null,
+        }),
+  ]);
+
+  const apiHealth: PavillionApiHealth | null = apiHealthResult.value;
+  const status: PavillionStatus | null = statusResult.value;
+  const rpcPeers: PavillionRpcPeer[] | null = rpcPeersResult.value;
+  const clientBuild: PavillionClientBuild | null = clientBuildResult.value;
+  const clientConfig: PavillionClientConfig | null = clientConfigResult.value;
+  const shopHealth: PavillionShopHealth | null = shopHealthResult.value;
+
+  const statusAgeSec =
+    status?.timestamp === null || status?.timestamp === undefined
+      ? null
+      : Math.max(0, Date.now() / 1000 - status.timestamp);
+  const primaryPeer = rpcPeers && rpcPeers.length > 0 ? rpcPeers[0] : null;
+  const network = inferPavillionNetwork({
+    expectedNetwork: entry.expectedNetwork,
+    rpcPeers,
+    clientConfig,
+  });
+
+  const hasApiHealth = apiHealth !== null;
+  const hasStatus = status !== null;
+  const hasRpcPeers = Boolean(rpcPeers && rpcPeers.length > 0);
+  const hasClientBuild = clientBuild !== null;
+  const hasShopHealth = entry.shopUrl ? shopHealth !== null : null;
+  const statusOk = status?.ok === true;
+  const overallOk =
+    hasApiHealth &&
+    hasStatus &&
+    hasRpcPeers &&
+    hasClientBuild &&
+    hasShopHealth !== false &&
+    statusOk;
+
+  const apiError = apiHealthResult.error ? sanitizeError(apiHealthResult.error) : null;
+  const statusError = statusResult.error ? sanitizeError(statusResult.error) : null;
+  const rpcError = rpcPeersResult.error ? sanitizeError(rpcPeersResult.error) : null;
+  const clientError = clientBuildResult.error ? sanitizeError(clientBuildResult.error) : null;
+  const shopError = shopHealthResult.error ? sanitizeError(shopHealthResult.error) : null;
+
+  const configError = clientConfigResult.error ? sanitizeError(clientConfigResult.error) : null;
+  const error = apiError ?? statusError ?? rpcError ?? clientError ?? configError ?? shopError;
+
+  return {
+    ...baseCard({
+      id,
+      nodeKey,
+      kind: "pavillion",
+      title: entry.title,
+      height: null,
+    }),
+    pavNetwork: network,
+    pavOverallOk: overallOk,
+    pavStatusAgeSec: statusAgeSec,
+    pavSecureNodes: status?.secureNodes ?? null,
+    pavOutagesCount: status?.outagesCount ?? null,
+    pavRpcPeerCount: rpcPeers?.length ?? null,
+    pavRpcPrimary: primaryPeer?.url ?? null,
+    pavApiUrl: entry.apiUrl,
+    pavApiProbeOk: hasApiHealth,
+    pavApiError: apiError,
+    pavApiUptimeSec: apiHealth?.uptimeSeconds ?? null,
+    pavApiBuildTime: apiHealth?.buildTime ?? null,
+    pavApiBuildCommit: apiHealth?.buildCommit ?? null,
+    pavApiBuildVersion: apiHealth?.buildVersion ?? null,
+    pavClientUrl: entry.clientUrl,
+    pavClientProbeOk: hasClientBuild,
+    pavClientError: clientError,
+    pavClientApiUrl: clientConfig?.api ?? null,
+    pavClientBuildTime: clientBuild?.buildTime ?? null,
+    pavClientBuildCommit: clientBuild?.buildCommit ?? null,
+    pavClientBuildBranch: clientBuild?.buildBranch ?? null,
+    pavClientAppVersion: clientBuild?.appVersion ?? null,
+    pavClientSdkVersion: clientBuild?.sdkVersion ?? null,
+    pavShopUrl: entry.shopUrl ?? null,
+    pavShopProbeOk: hasShopHealth,
+    pavShopError: shopError,
+    pavShopUptimeSec: shopHealth?.uptimeSeconds ?? null,
+    pavShopBuildVersion: shopHealth?.buildVersion ?? null,
+    pavShopBuildCommit: shopHealth?.buildCommit ?? null,
+    pavStatusProbeOk: hasStatus,
+    pavStatusOk: status?.ok ?? null,
+    pavStatusError: statusError,
+    pavRpcProbeOk: hasRpcPeers,
+    pavRpcError: rpcError,
     error,
   };
 }

@@ -1,6 +1,6 @@
 import type { BlockHeights, StatusSummary } from "@/lib/api";
 
-export type CardKind = "bp" | "rpc" | "explorer";
+export type CardKind = "bp" | "rpc" | "explorer" | "pavillion";
 
 export type CardData = {
   id: string;
@@ -20,6 +20,40 @@ export type CardData = {
   explorerLastBlockHeight?: number | null;
   explorerLastBlockAgeSec?: number | null;
   explorerResponseMs?: number | null;
+  pavNetwork?: string | null;
+  pavOverallOk?: boolean | null;
+  pavStatusAgeSec?: number | null;
+  pavSecureNodes?: number | null;
+  pavOutagesCount?: number | null;
+  pavRpcPeerCount?: number | null;
+  pavRpcPrimary?: string | null;
+  pavApiUrl?: string | null;
+  pavApiProbeOk?: boolean | null;
+  pavApiError?: string | null;
+  pavApiUptimeSec?: number | null;
+  pavApiBuildTime?: string | null;
+  pavApiBuildCommit?: string | null;
+  pavApiBuildVersion?: string | null;
+  pavClientUrl?: string | null;
+  pavClientProbeOk?: boolean | null;
+  pavClientError?: string | null;
+  pavClientApiUrl?: string | null;
+  pavClientBuildTime?: string | null;
+  pavClientBuildCommit?: string | null;
+  pavClientBuildBranch?: string | null;
+  pavClientAppVersion?: string | null;
+  pavClientSdkVersion?: string | null;
+  pavShopUrl?: string | null;
+  pavShopProbeOk?: boolean | null;
+  pavShopError?: string | null;
+  pavShopUptimeSec?: number | null;
+  pavShopBuildVersion?: string | null;
+  pavShopBuildCommit?: string | null;
+  pavStatusProbeOk?: boolean | null;
+  pavStatusOk?: boolean | null;
+  pavStatusError?: string | null;
+  pavRpcProbeOk?: boolean | null;
+  pavRpcError?: string | null;
   heights?: BlockHeights | null;
   status?: StatusSummary | null;
   leader?: string | null;

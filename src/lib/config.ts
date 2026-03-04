@@ -19,11 +19,20 @@ export type ExplorerEntry = {
   apiUrl: string;
 };
 
+export type PavillionEntry = {
+  title: string;
+  clientUrl: string;
+  apiUrl: string;
+  shopUrl?: string;
+  expectedNetwork?: string;
+};
+
 export type NetworkConfig = {
   defaultExplorer: string;
   hosts: Record<string, HostEntry>;
   rpcs: Record<string, RpcEntry>;
   explorers: Record<string, ExplorerEntry>;
+  pavillions: Record<string, PavillionEntry>;
 };
 
 export type DashboardConfig = {
@@ -79,6 +88,7 @@ function parseNetworkConfig(value: unknown, label: NetworkKey): NetworkConfig {
     RpcEntry
   >;
   const explorers = parseExplorerEntries(value.explorers, `explorers (${label})`);
+  const pavillions = parsePavillionEntries(value.pavillions, `pavillions (${label})`);
   // Each network declares its own default explorer to avoid cross-network API mixups.
   const defaultExplorer = readString(value.defaultExplorer);
   if (!defaultExplorer) {
@@ -93,6 +103,7 @@ function parseNetworkConfig(value: unknown, label: NetworkKey): NetworkConfig {
     hosts,
     rpcs,
     explorers,
+    pavillions,
   };
 }
 
@@ -120,6 +131,38 @@ function parseExplorerEntries(
     const title = readString(entry.title);
     result[key] = title ? { title, url, apiUrl } : { url, apiUrl };
   }
+  return result;
+}
+
+function parsePavillionEntries(
+  value: unknown,
+  label: string
+): Record<string, PavillionEntry> {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+
+  const result: Record<string, PavillionEntry> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!isRecord(entry)) {
+      throw new Error(`${label} entry "${key}" must be an object`);
+    }
+    const title = readString(entry.title);
+    const clientUrl = readString(entry.clientUrl);
+    const apiUrl = readString(entry.apiUrl);
+    if (!title || !clientUrl || !apiUrl) {
+      throw new Error(
+        `${label} entry "${key}" must include title, clientUrl, and apiUrl`
+      );
+    }
+    const shopUrl = readString(entry.shopUrl) ?? undefined;
+    const expectedNetwork = readString(entry.expectedNetwork) ?? undefined;
+    result[key] = { title, clientUrl, apiUrl, shopUrl, expectedNetwork };
+  }
+
   return result;
 }
 

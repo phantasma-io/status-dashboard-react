@@ -22,6 +22,26 @@ export function readNumber(value: unknown): number | null {
   return null;
 }
 
+export function readBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  const numeric = readNumber(value);
+  if (numeric !== null) {
+    return numeric !== 0;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === "true" || trimmed === "yes") {
+      return true;
+    }
+    if (trimmed === "false" || trimmed === "no") {
+      return false;
+    }
+  }
+  return null;
+}
+
 export function readArray(value: unknown): unknown[] | null {
   return Array.isArray(value) ? value : null;
 }

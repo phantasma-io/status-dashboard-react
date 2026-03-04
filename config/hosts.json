@@ -10,6 +10,7 @@
       },
       "hosts": {},
       "rpcs": {},
+      "pavillions": {},
       "defaultExplorer": "Explorer"
     },
     "testnet": {
@@ -21,6 +22,7 @@
       },
       "hosts": {},
       "rpcs": {},
+      "pavillions": {},
       "defaultExplorer": "Explorer"
     },
     "devnet": {
@@ -32,6 +34,7 @@
       },
       "hosts": {},
       "rpcs": {},
+      "pavillions": {},
       "defaultExplorer": "Explorer"
     }
   }

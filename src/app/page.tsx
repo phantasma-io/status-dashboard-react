@@ -17,7 +17,7 @@ const networkLabels: Record<NetworkKey, string> = {
 type DashboardResponse = {
   network: NetworkKey;
   defaultNetwork: NetworkKey;
-  counts: { hosts: number; rpcs: number; explorers: number };
+  counts: { hosts: number; rpcs: number; explorers: number; pavillions: number };
   cards: CardData[];
   maxHeight: number | null;
   supply?: { soul: string | null; kcal: string | null; error?: string };
@@ -37,13 +37,13 @@ type SupplyState = {
 
 type DashboardState = {
   cards: CardData[];
-  counts: { hosts: number; rpcs: number; explorers: number };
+  counts: { hosts: number; rpcs: number; explorers: number; pavillions: number };
   maxHeight: number | null;
 };
 
 const emptyState: DashboardState = {
   cards: [],
-  counts: { hosts: 0, rpcs: 0, explorers: 0 },
+  counts: { hosts: 0, rpcs: 0, explorers: 0, pavillions: 0 },
   maxHeight: null,
 };
 
@@ -108,7 +108,7 @@ async function requestSupply(network: NetworkKey): Promise<SupplyResponse> {
 function toDashboardState(data: DashboardResponse): DashboardState {
   return {
     cards: data.cards ?? [],
-    counts: data.counts ?? { hosts: 0, rpcs: 0, explorers: 0 },
+    counts: data.counts ?? { hosts: 0, rpcs: 0, explorers: 0, pavillions: 0 },
     maxHeight: typeof data.maxHeight === "number" ? data.maxHeight : null,
   };
 }
@@ -381,7 +381,10 @@ export default function Home() {
 
   const placeholderCount = Math.max(
     6,
-    dashboard.counts.hosts + dashboard.counts.rpcs + dashboard.counts.explorers,
+    dashboard.counts.hosts +
+      dashboard.counts.rpcs +
+      dashboard.counts.explorers +
+      dashboard.counts.pavillions,
     dashboard.cards.length || 0
   );
 
@@ -426,7 +429,7 @@ export default function Home() {
       };
     });
     const heights = cards
-      .filter((item) => item.kind !== "explorer")
+      .filter((item) => item.kind === "bp" || item.kind === "rpc")
       .map((item) => item.height)
       .filter((height): height is number => height !== null);
     const maxHeight = heights.length ? Math.max(...heights) : null;
@@ -553,8 +556,9 @@ export default function Home() {
 
     const priorityForKind = (kind: CardData["kind"]) => {
       if (kind === "rpc") return 0;
-      if (kind === "explorer") return 1;
-      return 2;
+      if (kind === "pavillion") return 1;
+      if (kind === "explorer") return 2;
+      return 3;
     };
 
     primaryJobs
@@ -738,7 +742,7 @@ export default function Home() {
                 <div className="flex items-center justify-between">
                   <span>Total nodes</span>
                   <span className="font-mono text-foreground">
-                    {dashboard.counts.hosts + dashboard.counts.rpcs}
+                    {dashboard.counts.hosts + dashboard.counts.rpcs + dashboard.counts.pavillions}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -757,6 +761,7 @@ export default function Home() {
                 <div>Hosts: {dashboard.counts.hosts}</div>
                 <div>RPCs: {dashboard.counts.rpcs}</div>
                 <div>Explorers: {dashboard.counts.explorers}</div>
+                <div>Pavillions: {dashboard.counts.pavillions}</div>
               </div>
             </div>
           </section>
@@ -797,7 +802,12 @@ export default function Home() {
                 </div>
               ))
             : null}
-          {cardsStatus !== "loading" && dashboard.counts.hosts + dashboard.counts.rpcs + dashboard.counts.explorers === 0 ? (
+          {cardsStatus !== "loading" &&
+          dashboard.counts.hosts +
+            dashboard.counts.rpcs +
+            dashboard.counts.explorers +
+            dashboard.counts.pavillions ===
+            0 ? (
             <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
               No nodes configured for {networkLabels[selectedNetwork]}. Update the server config file.
             </div>

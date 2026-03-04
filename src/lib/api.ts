@@ -1,4 +1,4 @@
-import { isRecord, readArray, readNumber, readString } from "@/lib/validators";
+import { isRecord, readArray, readBoolean, readNumber, readString } from "@/lib/validators";
 
 export type BlockHeights = {
   applied: number;
@@ -54,6 +54,46 @@ export type RpcBuildInfo = {
 export type ExplorerLatestBlock = {
   height: number | null;
   dateSec: number | null;
+};
+
+export type PavillionApiHealth = {
+  uptimeSeconds: number | null;
+  buildTime: string | null;
+  buildCommit: string | null;
+  buildVersion: string | null;
+};
+
+export type PavillionStatus = {
+  ok: boolean | null;
+  timestamp: number | null;
+  secureNodes: number | null;
+  outagesCount: number | null;
+  phantasmaRpc: number | null;
+};
+
+export type PavillionRpcPeer = {
+  url: string;
+  location: string | null;
+  version: string | null;
+};
+
+export type PavillionClientBuild = {
+  buildTime: string | null;
+  buildCommit: string | null;
+  buildBranch: string | null;
+  appVersion: string | null;
+  sdkVersion: string | null;
+};
+
+export type PavillionClientConfig = {
+  api: string | null;
+  phantasmaExplorer: string | null;
+};
+
+export type PavillionShopHealth = {
+  uptimeSeconds: number | null;
+  buildVersion: string | null;
+  buildCommit: string | null;
 };
 
 
@@ -460,4 +500,122 @@ export async function fetchExplorerLatestBlock(
     throw new Error("Explorer response missing block data");
   }
   return { height, dateSec };
+}
+
+function withPath(baseUrl: string, path: string): string {
+  return `${baseUrl.replace(/\/+$/g, "")}/${path.replace(/^\/+/g, "")}`;
+}
+
+export async function fetchPavillionApiHealth(
+  apiBase: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<PavillionApiHealth> {
+  const payload = await fetchJson(withPath(apiBase, "health"), timeoutMs);
+  if (!isRecord(payload)) {
+    throw new Error("Pavillion API health response must be an object");
+  }
+  const build = isRecord(payload.build) ? payload.build : {};
+  return {
+    uptimeSeconds: readNumber(payload.uptime_seconds),
+    buildTime: readString(build.time),
+    buildCommit: readString(build.commit),
+    buildVersion: readString(build.version),
+  };
+}
+
+export async function fetchPavillionStatus(
+  apiBase: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<PavillionStatus> {
+  const payload = await fetchJson(withPath(apiBase, "status"), timeoutMs);
+  if (!isRecord(payload)) {
+    throw new Error("Pavillion status response must be an object");
+  }
+  if (payload.error) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Pavillion status error");
+  }
+  const outages = readArray(payload.outages);
+  return {
+    ok: readBoolean(payload.ok),
+    timestamp: readNumber(payload.timestamp),
+    secureNodes: readNumber(payload.secureNodes),
+    outagesCount: outages ? outages.length : null,
+    phantasmaRpc: readNumber(payload.phantasmaRpc),
+  };
+}
+
+export async function fetchPavillionRpcPeers(
+  apiBase: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<PavillionRpcPeer[]> {
+  const payload = await fetchJson(withPath(apiBase, "get_phantasma_rpc"), timeoutMs);
+  if (isRecord(payload) && payload.error) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Pavillion RPC error");
+  }
+  const rows = readArray(payload);
+  if (!rows) {
+    throw new Error("Pavillion RPC peers response must be an array");
+  }
+  const peers: PavillionRpcPeer[] = [];
+  for (const row of rows) {
+    if (!isRecord(row)) {
+      continue;
+    }
+    const url = readString(row.url);
+    if (!url) {
+      continue;
+    }
+    peers.push({
+      url,
+      location: readString(row.location),
+      version: readString(row.version),
+    });
+  }
+  return peers;
+}
+
+export async function fetchPavillionClientBuild(
+  clientBase: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<PavillionClientBuild> {
+  const payload = await fetchJson(withPath(clientBase, "build-info.json"), timeoutMs);
+  if (!isRecord(payload)) {
+    throw new Error("Pavillion client build response must be an object");
+  }
+  return {
+    buildTime: readString(payload.buildTime),
+    buildCommit: readString(payload.buildCommit),
+    buildBranch: readString(payload.buildBranch),
+    appVersion: readString(payload.appVersion),
+    sdkVersion: readString(payload.sdkVersion),
+  };
+}
+
+export async function fetchPavillionClientConfig(
+  clientBase: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<PavillionClientConfig> {
+  const payload = await fetchJson(withPath(clientBase, "config.json"), timeoutMs);
+  if (!isRecord(payload)) {
+    throw new Error("Pavillion client config response must be an object");
+  }
+  return {
+    api: readString(payload.api),
+    phantasmaExplorer: readString(payload.phantasmaExplorer),
+  };
+}
+
+export async function fetchPavillionShopHealth(
+  shopBase: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<PavillionShopHealth> {
+  const payload = await fetchJson(withPath(shopBase, "health"), timeoutMs);
+  if (!isRecord(payload)) {
+    throw new Error("Pavillion shop health response must be an object");
+  }
+  return {
+    uptimeSeconds: readNumber(payload.uptime_seconds),
+    buildVersion: readString(payload.build_version),
+    buildCommit: readString(payload.build_commit),
+  };
 }

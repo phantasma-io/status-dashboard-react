@@ -38,6 +38,15 @@ The dashboard reads a server-side JSON file. The default Docker setup mounts it 
           "title": "Mainnet RPC 1",
           "url": "https://example.org/rpc"
         }
+      },
+      "pavillions": {
+        "hub": {
+          "title": "Pavillion Hub",
+          "clientUrl": "https://pavillionhub.com",
+          "apiUrl": "https://pavillionhub.com/api",
+          "shopUrl": "http://127.0.0.1:22222",
+          "expectedNetwork": "mainnet"
+        }
       }
     },
     "testnet": {
@@ -49,7 +58,8 @@ The dashboard reads a server-side JSON file. The default Docker setup mounts it 
         }
       },
       "hosts": {},
-      "rpcs": {}
+      "rpcs": {},
+      "pavillions": {}
     },
     "devnet": {
       "defaultExplorer": "phantasma",
@@ -60,7 +70,8 @@ The dashboard reads a server-side JSON file. The default Docker setup mounts it 
         }
       },
       "hosts": {},
-      "rpcs": {}
+      "rpcs": {},
+      "pavillions": {}
     }
   }
 }
@@ -73,6 +84,14 @@ Notes:
 - Explorer cards surface links to both the explorer front-end and the explorer API (using `apiUrl` without `/api/v1`).
 - Each network must include `defaultExplorer` matching one of its explorer keys.
 - `role` is optional for hosts. If omitted, it defaults to `Watcher`.
+- `pavillions` is optional per network.
+- Pavillion card checks these endpoints:
+  - `clientUrl/build-info.json`
+  - `clientUrl/config.json`
+  - `apiUrl/health`
+  - `apiUrl/status`
+  - `apiUrl/get_phantasma_rpc`
+  - `shopUrl/health` (optional, if `shopUrl` is configured)
 
 ## Docker (local)
 
