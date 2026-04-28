@@ -11,7 +11,6 @@ import type {
   StatusSummary,
 } from "@/lib/api";
 import {
-  fetchBlockHeights,
   fetchExplorerLatestBlock,
   fetchPavillionApiHealth,
   fetchPavillionClientBuild,
@@ -232,7 +231,13 @@ export async function buildBpHeightsCard({
   let error: string | null = null;
 
   try {
-    heights = await fetchBlockHeights(entry.url, timeoutMs);
+    const status = await fetchStatusSummary(entry.url, timeoutMs, {
+      includeHeights: true,
+    });
+    heights = status.heights ?? null;
+    if (!heights) {
+      throw new Error("Status response missing heights");
+    }
   } catch (err) {
     error = sanitizeError(err);
   }
@@ -260,7 +265,9 @@ export async function buildBpStatusCard({
   let error: string | null = null;
 
   try {
-    status = await fetchStatusSummary(entry.url, timeoutMs);
+    status = await fetchStatusSummary(entry.url, timeoutMs, {
+      includeRecentBlocks: true,
+    });
   } catch (err) {
     error = sanitizeError(err);
   }
@@ -296,21 +303,17 @@ export async function buildBpCard({
   let status: StatusSummary | null = null;
   let error: string | null = null;
 
-  const [heightsResult, statusResult] = await Promise.allSettled([
-    fetchBlockHeights(entry.url, timeoutMs),
-    fetchStatusSummary(entry.url, timeoutMs),
-  ]);
-
-  if (heightsResult.status === "fulfilled") {
-    heights = heightsResult.value;
-  } else {
-    error = sanitizeError(heightsResult.reason);
-  }
-
-  if (statusResult.status === "fulfilled") {
-    status = statusResult.value;
-  } else {
-    error = error ?? sanitizeError(statusResult.reason);
+  try {
+    status = await fetchStatusSummary(entry.url, timeoutMs, {
+      includeHeights: true,
+      includeRecentBlocks: true,
+    });
+    heights = status.heights ?? null;
+    if (!heights) {
+      throw new Error("Status response missing heights");
+    }
+  } catch (err) {
+    error = sanitizeError(err);
   }
 
   const summary = summarizeBlocks(status);

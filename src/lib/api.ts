@@ -40,6 +40,7 @@ export type StatusSummary = {
     lastBlockMs?: number;
   };
   blocks?: StatusBlock[];
+  heights?: BlockHeights;
   connectionsCount?: number;
   gasToken?: TokenInfo;
   dataToken?: TokenInfo;
@@ -223,6 +224,13 @@ function parseBlockHeights(payload: unknown): BlockHeights {
   return { applied, proven, committed, appended, known };
 }
 
+function parseOptionalBlockHeights(payload: unknown): BlockHeights | undefined {
+  if (payload === undefined || payload === null) {
+    return undefined;
+  }
+  return parseBlockHeights(payload);
+}
+
 function parseTokenInfo(payload: unknown): TokenInfo | undefined {
   if (!isRecord(payload)) {
     return undefined;
@@ -311,6 +319,7 @@ function parseStatus(payload: unknown): StatusSummary {
     idPha: readString(result.id_pha) ?? undefined,
     blockRate: parseBlockRate(result.block_rate),
     blocks: parseBlocks(result.blocks),
+    heights: parseOptionalBlockHeights(result.heights),
     connectionsCount: Array.isArray(result.connections)
       ? result.connections.length
       : undefined,
@@ -319,19 +328,19 @@ function parseStatus(payload: unknown): StatusSummary {
   };
 }
 
-export async function fetchBlockHeights(
-  baseUrl: string,
-  timeoutMs = DEFAULT_TIMEOUT_MS
-): Promise<BlockHeights> {
-  const payload = await fetchJson(`${baseUrl}v1/block_heights?format=json`, timeoutMs);
-  return parseBlockHeights(payload);
-}
-
 export async function fetchStatusSummary(
   baseUrl: string,
-  timeoutMs = DEFAULT_TIMEOUT_MS
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  options: { includeHeights?: boolean; includeRecentBlocks?: boolean } = {}
 ): Promise<StatusSummary> {
-  const payload = await fetchJson(`${baseUrl}v1/status?format=json`, timeoutMs);
+  const params = new URLSearchParams({ format: "json" });
+  if (options.includeHeights) {
+    params.set("heights", "1");
+  }
+  if (options.includeRecentBlocks) {
+    params.set("recent_blocks", "1");
+  }
+  const payload = await fetchJson(`${baseUrl}v1/status?${params.toString()}`, timeoutMs);
   return parseStatus(payload);
 }
 
