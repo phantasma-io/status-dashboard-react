@@ -154,6 +154,206 @@ export default function Home() {
   const nodeRequestId = useRef(0);
   const pendingNodeLoads = useRef(0);
 
+  // These helpers come before the effects, because the load effects call
+  // startNodeLoads. A value must be declared before the code that uses it
+  // (react-hooks/immutability).
+  const updateDashboardState = (
+    network: NetworkKey,
+    updater: (previous: DashboardState) => DashboardState
+  ) => {
+    setDashboard((previous) => {
+      const next = updater(previous);
+      dashboardCache.current[network] = next;
+      return next;
+    });
+  };
+
+  const mergeCardUpdate = (
+    previous: DashboardState,
+    cardId: string,
+    nextCard: CardData,
+    options?: { ignoreNulls?: boolean }
+  ): DashboardState => {
+    const cards = previous.cards.map((item) => {
+      if (item.id !== cardId) {
+        return item;
+      }
+      const merged = {
+        ...item,
+        ...nextCard,
+      } as Record<string, unknown>;
+      if (options?.ignoreNulls) {
+        for (const [key, value] of Object.entries(nextCard)) {
+          if (value === null || value === undefined) {
+            merged[key] = (item as Record<string, unknown>)[key];
+          }
+        }
+      }
+      return {
+        ...(merged as CardData),
+        // Preserve stable IDs and kinds from the shell list.
+        id: item.id,
+        kind: item.kind,
+        nodeKey: item.nodeKey ?? nextCard.nodeKey,
+      };
+    });
+    const heights = cards
+      .filter((item) => item.kind === "bp" || item.kind === "rpc")
+      .map((item) => item.height)
+      .filter((height): height is number => height !== null);
+    const maxHeight = heights.length ? Math.max(...heights) : null;
+    return { ...previous, cards, maxHeight };
+  };
+
+  const applyCardError = (
+    previous: DashboardState,
+    cardId: string,
+    message: string
+  ): DashboardState => ({
+    ...previous,
+    cards: previous.cards.map((item) =>
+      item.id === cardId ? { ...item, error: message } : item
+    ),
+  });
+
+  const requestNodeCard = async (
+    network: NetworkKey,
+    card: CardData,
+    options?: { latency?: boolean; part?: string }
+  ) => {
+    if (!card.nodeKey) {
+      throw new Error("Missing node key");
+    }
+    const params = new URLSearchParams({
+      network,
+      kind: card.kind,
+      key: card.nodeKey,
+    });
+    if (options?.part) {
+      params.set("part", options.part);
+    } else if (options?.latency) {
+      params.set("latency", "1");
+    }
+    const response = await fetch(`/api/node?${params.toString()}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = (await response.json()) as { card: CardData };
+    return payload.card;
+  };
+
+  const startNodeLoads = (cards: CardData[], network: NetworkKey, requestId: number) => {
+    const targets = cards.filter((card) => card.nodeKey);
+    pendingNodeLoads.current = targets.length;
+    if (pendingNodeLoads.current === 0) {
+      setCardsStatus("idle");
+      return;
+    }
+    setCardsStatus("refreshing");
+
+    const finishPrimary = () => {
+      if (nodeRequestId.current !== requestId) {
+        return;
+      }
+      pendingNodeLoads.current = Math.max(0, pendingNodeLoads.current - 1);
+      if (pendingNodeLoads.current === 0) {
+        setCardsStatus("idle");
+      }
+    };
+
+    const requestAndApply = (card: CardData, options: {
+      part?: string;
+      ignoreNulls?: boolean;
+      suppressError?: boolean;
+      onFinally?: () => void;
+    }) => {
+      void (async () => {
+        try {
+          const nextCard = await requestNodeCard(network, card, { part: options.part });
+          if (nodeRequestId.current !== requestId) {
+            return;
+          }
+          updateDashboardState(network, (previous) =>
+            mergeCardUpdate(previous, card.id, nextCard, { ignoreNulls: options.ignoreNulls })
+          );
+        } catch (err) {
+          if (nodeRequestId.current !== requestId) {
+            return;
+          }
+          if (!options.suppressError) {
+            const message = err instanceof Error ? err.message : String(err);
+            updateDashboardState(network, (previous) =>
+              applyCardError(previous, card.id, message)
+            );
+          }
+        } finally {
+          options.onFinally?.();
+        }
+      })();
+    };
+
+    const primaryJobs: Array<{
+      card: CardData;
+      part?: string;
+      ignoreNulls?: boolean;
+      suppressError?: boolean;
+      onFinally?: () => void;
+    }> = [];
+    const secondaryJobs: Array<{
+      card: CardData;
+      part?: string;
+      ignoreNulls?: boolean;
+      suppressError?: boolean;
+    }> = [];
+
+    for (const card of targets) {
+      if (card.kind === "bp") {
+        primaryJobs.push({ card, part: "heights", onFinally: finishPrimary });
+        secondaryJobs.push({ card, part: "status", ignoreNulls: true });
+        continue;
+      }
+      if (card.kind === "rpc") {
+        primaryJobs.push({ card, part: "height", onFinally: finishPrimary });
+        secondaryJobs.push({ card, part: "version", ignoreNulls: true });
+        secondaryJobs.push({ card, part: "latency", ignoreNulls: true, suppressError: true });
+        continue;
+      }
+      primaryJobs.push({ card, onFinally: finishPrimary });
+    }
+
+    const priorityForKind = (kind: CardData["kind"]) => {
+      if (kind === "rpc") return 0;
+      if (kind === "pavillion") return 1;
+      if (kind === "explorer") return 2;
+      return 3;
+    };
+
+    primaryJobs
+      .sort((a, b) => priorityForKind(a.card.kind) - priorityForKind(b.card.kind))
+      .forEach((job) => {
+        requestAndApply(job.card, {
+          part: job.part,
+          ignoreNulls: job.ignoreNulls,
+          suppressError: job.suppressError,
+          onFinally: job.onFinally,
+        });
+      });
+
+    if (secondaryJobs.length > 0) {
+      setTimeout(() => {
+        for (const job of secondaryJobs) {
+          requestAndApply(job.card, {
+            part: job.part,
+            ignoreNulls: job.ignoreNulls,
+            suppressError: job.suppressError,
+          });
+        }
+      }, 0);
+    }
+  };
+
   useEffect(() => {
     if (!hasResolvedPreference || typeof window === "undefined") {
       return;
@@ -168,10 +368,17 @@ export default function Home() {
     if (typeof window === "undefined") {
       return;
     }
+    // The server HTML always shows the summary expanded, so the stored choice is
+    // applied after hydration. The state update runs from a timer, because an
+    // update made directly in an effect body triggers a cascading render
+    // (react-hooks/set-state-in-effect). The value is read now, because the next
+    // effect writes the current state back to storage.
     const stored = window.localStorage.getItem(summaryStorageKey);
-    if (stored) {
-      setSummaryCollapsed(stored === "1");
+    if (!stored) {
+      return;
     }
+    const timer = window.setTimeout(() => setSummaryCollapsed(stored === "1"), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -182,11 +389,9 @@ export default function Home() {
   }, [summaryCollapsed]);
 
   useEffect(() => {
+    // No reset here: this effect runs once on mount, and the initial state already
+    // shows cards and supply as loading, with no error and no card refreshing.
     let cancelled = false;
-    setCardsStatus("loading");
-    setSupplyStatus("loading");
-    setError(null);
-    setRefreshingCards({});
 
     const loadInitial = async () => {
       const currentDashboardRequest = ++dashboardRequestId.current;
@@ -387,203 +592,6 @@ export default function Home() {
       dashboard.counts.pavillions,
     dashboard.cards.length || 0
   );
-
-  const updateDashboardState = (
-    network: NetworkKey,
-    updater: (previous: DashboardState) => DashboardState
-  ) => {
-    setDashboard((previous) => {
-      const next = updater(previous);
-      dashboardCache.current[network] = next;
-      return next;
-    });
-  };
-
-  const mergeCardUpdate = (
-    previous: DashboardState,
-    cardId: string,
-    nextCard: CardData,
-    options?: { ignoreNulls?: boolean }
-  ): DashboardState => {
-    const cards = previous.cards.map((item) => {
-      if (item.id !== cardId) {
-        return item;
-      }
-      const merged = {
-        ...item,
-        ...nextCard,
-      } as Record<string, unknown>;
-      if (options?.ignoreNulls) {
-        for (const [key, value] of Object.entries(nextCard)) {
-          if (value === null || value === undefined) {
-            merged[key] = (item as Record<string, unknown>)[key];
-          }
-        }
-      }
-      return {
-        ...(merged as CardData),
-        // Preserve stable IDs and kinds from the shell list.
-        id: item.id,
-        kind: item.kind,
-        nodeKey: item.nodeKey ?? nextCard.nodeKey,
-      };
-    });
-    const heights = cards
-      .filter((item) => item.kind === "bp" || item.kind === "rpc")
-      .map((item) => item.height)
-      .filter((height): height is number => height !== null);
-    const maxHeight = heights.length ? Math.max(...heights) : null;
-    return { ...previous, cards, maxHeight };
-  };
-
-  const applyCardError = (
-    previous: DashboardState,
-    cardId: string,
-    message: string
-  ): DashboardState => ({
-    ...previous,
-    cards: previous.cards.map((item) =>
-      item.id === cardId ? { ...item, error: message } : item
-    ),
-  });
-
-  const requestNodeCard = async (
-    network: NetworkKey,
-    card: CardData,
-    options?: { latency?: boolean; part?: string }
-  ) => {
-    if (!card.nodeKey) {
-      throw new Error("Missing node key");
-    }
-    const params = new URLSearchParams({
-      network,
-      kind: card.kind,
-      key: card.nodeKey,
-    });
-    if (options?.part) {
-      params.set("part", options.part);
-    } else if (options?.latency) {
-      params.set("latency", "1");
-    }
-    const response = await fetch(`/api/node?${params.toString()}`, {
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const payload = (await response.json()) as { card: CardData };
-    return payload.card;
-  };
-
-  const startNodeLoads = (cards: CardData[], network: NetworkKey, requestId: number) => {
-    const targets = cards.filter((card) => card.nodeKey);
-    pendingNodeLoads.current = targets.length;
-    if (pendingNodeLoads.current === 0) {
-      setCardsStatus("idle");
-      return;
-    }
-    setCardsStatus("refreshing");
-
-    const finishPrimary = () => {
-      if (nodeRequestId.current !== requestId) {
-        return;
-      }
-      pendingNodeLoads.current = Math.max(0, pendingNodeLoads.current - 1);
-      if (pendingNodeLoads.current === 0) {
-        setCardsStatus("idle");
-      }
-    };
-
-    const requestAndApply = (card: CardData, options: {
-      part?: string;
-      ignoreNulls?: boolean;
-      suppressError?: boolean;
-      onFinally?: () => void;
-    }) => {
-      void (async () => {
-        try {
-          const nextCard = await requestNodeCard(network, card, { part: options.part });
-          if (nodeRequestId.current !== requestId) {
-            return;
-          }
-          updateDashboardState(network, (previous) =>
-            mergeCardUpdate(previous, card.id, nextCard, { ignoreNulls: options.ignoreNulls })
-          );
-        } catch (err) {
-          if (nodeRequestId.current !== requestId) {
-            return;
-          }
-          if (!options.suppressError) {
-            const message = err instanceof Error ? err.message : String(err);
-            updateDashboardState(network, (previous) =>
-              applyCardError(previous, card.id, message)
-            );
-          }
-        } finally {
-          options.onFinally?.();
-        }
-      })();
-    };
-
-    const primaryJobs: Array<{
-      card: CardData;
-      part?: string;
-      ignoreNulls?: boolean;
-      suppressError?: boolean;
-      onFinally?: () => void;
-    }> = [];
-    const secondaryJobs: Array<{
-      card: CardData;
-      part?: string;
-      ignoreNulls?: boolean;
-      suppressError?: boolean;
-    }> = [];
-
-    for (const card of targets) {
-      if (card.kind === "bp") {
-        primaryJobs.push({ card, part: "heights", onFinally: finishPrimary });
-        secondaryJobs.push({ card, part: "status", ignoreNulls: true });
-        continue;
-      }
-      if (card.kind === "rpc") {
-        primaryJobs.push({ card, part: "height", onFinally: finishPrimary });
-        secondaryJobs.push({ card, part: "version", ignoreNulls: true });
-        secondaryJobs.push({ card, part: "latency", ignoreNulls: true, suppressError: true });
-        continue;
-      }
-      primaryJobs.push({ card, onFinally: finishPrimary });
-    }
-
-    const priorityForKind = (kind: CardData["kind"]) => {
-      if (kind === "rpc") return 0;
-      if (kind === "pavillion") return 1;
-      if (kind === "explorer") return 2;
-      return 3;
-    };
-
-    primaryJobs
-      .sort((a, b) => priorityForKind(a.card.kind) - priorityForKind(b.card.kind))
-      .forEach((job) => {
-        requestAndApply(job.card, {
-          part: job.part,
-          ignoreNulls: job.ignoreNulls,
-          suppressError: job.suppressError,
-          onFinally: job.onFinally,
-        });
-      });
-
-    if (secondaryJobs.length > 0) {
-      setTimeout(() => {
-        for (const job of secondaryJobs) {
-          requestAndApply(job.card, {
-            part: job.part,
-            ignoreNulls: job.ignoreNulls,
-            suppressError: job.suppressError,
-          });
-        }
-      }, 0);
-    }
-  };
 
   const refreshCard = async (card: CardData) => {
     if (!card.nodeKey) {
